@@ -1,0 +1,1511 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bubble Dynamics</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #eef6ff;
+      --muted: #98a9bb;
+      --dim: #63758a;
+      --sim-chamber-width: 680px;
+      --sim-chamber-height: 600px;
+      --sim-chamber-height-mobile: 520px;
+      --outcome-side-gutter: 108px;
+      --outcome-bottom-gutter: 108px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { min-height: 100%; }
+
+    body {
+      margin: 0;
+      background: transparent;
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+      overflow-x: hidden;
+    }
+
+    .app {
+      width: min(calc(var(--sim-chamber-width) + var(--outcome-side-gutter) + var(--outcome-side-gutter) + 88px), 100%);
+      margin: 0 auto;
+      padding: 32px clamp(16px, 3vw, 44px) calc(var(--outcome-bottom-gutter) + 40px);
+    }
+
+    .simulation-column {
+      width: min(100%, var(--sim-chamber-width));
+      min-width: 0;
+      margin: 0 auto;
+    }
+
+    .stage-summary {
+      display: grid;
+      grid-template-columns: minmax(150px, 0.55fr) minmax(0, 1.45fr);
+      align-items: end;
+      gap: 24px;
+      margin: 0 4px 12px;
+    }
+
+    #bubbleCanvas {
+      display: block;
+      width: 100%;
+      height: var(--sim-chamber-height);
+      position: relative;
+      z-index: 1;
+    }
+
+    .simulation-box {
+      position: relative;
+      overflow: visible;
+      border: 1px solid #303030;
+    }
+
+    .outcome-canvas {
+      position: absolute;
+      z-index: 2;
+      top: 0;
+      left: calc(0px - var(--outcome-side-gutter));
+      display: block;
+      width: calc(100% + var(--outcome-side-gutter) + var(--outcome-side-gutter));
+      height: calc(100% + var(--outcome-bottom-gutter));
+      pointer-events: none;
+    }
+
+    .simulation-box::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 3;
+      box-shadow:
+        inset 8px 8px 14px rgba(48, 48, 48, 0.18),
+        inset 1px 1px 2px rgba(48, 48, 48, 0.3);
+    }
+
+    .population {
+      display: flex;
+      align-items: baseline;
+      gap: 9px;
+      min-width: 0;
+      pointer-events: none;
+    }
+
+    .population strong {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(1.8rem, 4vw, 3rem);
+      font-weight: 400;
+      line-height: 0.95;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .population span {
+      color: var(--muted);
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .outcome-share {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px 16px;
+      min-width: 0;
+      pointer-events: none;
+    }
+
+    .outcome-share header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 0.62rem;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .outcome-share header strong { color: var(--dim); font-weight: 500; }
+
+    .outcome-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 0;
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+
+    .outcome-row strong {
+      color: var(--ink);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    @media (max-width: 720px) {
+      .app { padding-top: 22px; }
+      #bubbleCanvas { height: var(--sim-chamber-height-mobile); }
+      .stage-summary { grid-template-columns: 1fr; gap: 8px; }
+    }
+
+    @media (max-width: 420px) {
+      .outcome-share { grid-template-columns: 1fr; gap: 4px; }
+      .outcome-share header { margin-bottom: 3px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="simulation-column" aria-label="Simulation and measurements">
+      <div class="stage-summary">
+        <div class="population" aria-live="polite"><strong id="populationValue">0</strong><span>Bubbles</span></div>
+        <div class="outcome-share" aria-live="polite" aria-atomic="true">
+          <header><span>Outcome share</span><strong>last 30 years</strong></header>
+          <div class="outcome-row"><span>Retired</span><strong id="shareFloor">0%</strong></div>
+          <div class="outcome-row"><span>Killed</span><strong id="shareCollision">0%</strong></div>
+          <div class="outcome-row"><span>Incapacitated</span><strong id="shareEaten">0%</strong></div>
+        </div>
+      </div>
+
+      <div class="simulation-box">
+        <canvas id="bubbleCanvas" role="img" aria-label="Animated chamber with blue and red cartel bubbles, collision pop effects, larger green police bubbles, yellow nested capture bubbles, and translucent fading outcome queues outside the left, right, and bottom edges.">Your browser does not support Canvas.</canvas>
+        <canvas id="outcomeCanvas" class="outcome-canvas" aria-hidden="true"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+
+      // ─────────────────────────────────────────────────────────────────────
+      // EASY-EDIT SIMULATION SETTINGS
+      // Change values in this single object to tune the entire simulation.
+      // All rates use seconds, all distances use canvas pixels, and percentages
+      // use the familiar 0–100 scale unless a comment says otherwise.
+      // ─────────────────────────────────────────────────────────────────────
+      const CONFIG = {
+        // Layout: maximum desktop chamber width and responsive chamber heights.
+        CHAMBER_WIDTH: 680,
+        CHAMBER_HEIGHT: 600,
+        MOBILE_CHAMBER_HEIGHT: 520,
+        MOBILE_POPULATION_BREAKPOINT: 560,
+
+        // Initial population and the hard performance cap for all bubbles.
+        INITIAL_PREY_DESKTOP: 96,
+        INITIAL_PREY_MOBILE: 72,
+        INITIAL_TOP_BIAS: 1.8,
+        MAX_TOTAL_BUBBLES: 460,
+
+        // Main simulation parameters. Edit these values directly to change the
+        // scenario; there are intentionally no live parameter controls in the UI.
+        BLUE_DAMPING: 10,
+        RED_DAMPING: 10,
+        GENERATION_MULTIPLIER: 2,
+        BLUE_DYNAMIC_GENERATION: false,
+        RED_DYNAMIC_GENERATION: false,
+        PREDATOR_COUNT: 7,
+        EATER_RATE: 0.55,
+        GRAVITY: 3.7,
+        OPPOSITE_COLOR_ATTRACTION_FORCE: 42,
+        OPPOSITE_COLOR_ATTRACTION_RANGE: 100,
+        PREDATOR_REPULSION_FORCE: 24,
+        PREDATOR_REPULSION_RANGE: 130,
+        HORIZONTAL_MOTION: 75,
+        PREY_RADIUS: 10,
+        STAIN_OPACITY: 0,
+        LIQUID_SPEED: 0,
+        MAX_PREDATORS: 20,
+
+        // Display-only transparency percentages: 0 = fully visible and
+        // 100 = fully transparent. Physics and statistics keep running.
+        COLLISION_BUBBLES_TRANSPARENCY: 80,
+        POLICE_AND_EATEN_BUBBLES_TRANSPARENCY: 80,
+        BOTTOM_BUBBLES_TRANSPARENCY: 0,
+        OTHER_AND_GENERATED_BUBBLES_TRANSPARENCY: 80,
+
+        // Recommended bounds for the manually edited parameters above.
+        MAX_EATER_RATE: 1,
+        GRAVITY_MIN: 0,
+        GRAVITY_MAX: 6,
+        HORIZONTAL_MOTION_MIN: 0,
+        HORIZONTAL_MOTION_MAX: 200,
+        PREY_RADIUS_MIN: 6,
+        PREY_RADIUS_MAX: 16,
+
+        // Undampened generation: dynamic mode goes from MIN_RATE at 0 prey to
+        // MAX_RATE at 100+ prey; static mode holds STATIC_GENERATION_RATE.
+        MIN_GENERATION_RATE: 0.5,
+        MAX_GENERATION_RATE: 5,
+        POPULATION_FOR_MAX_RATE: 100,
+        STATIC_GENERATION_RATE: 2.75,
+
+        // Broad overlapping ceiling areas used to create blue and red bubbles.
+        BLUE_INLET_START: 0.08,
+        BLUE_INLET_END: 0.62,
+        RED_INLET_START: 0.38,
+        RED_INLET_END: 0.92,
+        INLET_SPEED_MIN: 20,
+        INLET_SPEED_MAX: 45,
+        INLET_ANGLE_SPREAD: 1.05,
+        INLET_DOWNWARD_BIAS: 3,
+        INLET_PULSE_DURATION: 0.42,
+
+        // Blue/red free-motion physics. Attraction force is acceleration in
+        // px/s²; set it to 0 to disable red-blue attraction. Range is in pixels.
+        HORIZONTAL_WANDER_PRIMARY: 20,
+        HORIZONTAL_WANDER_SECONDARY: 11,
+        VERTICAL_WANDER: 6,
+        HORIZONTAL_DRAG: 0.996,
+        VERTICAL_DRAG: 0.997,
+        MAX_PREY_SPEED: 96,
+        WALL_RESTITUTION: 0.87,
+        CEILING_RESTITUTION: 0.82,
+        INITIAL_HORIZONTAL_SPEED: 42,
+        INITIAL_VERTICAL_SPEED: 24,
+        INITIAL_DOWNWARD_SPEED: 4,
+        INITIAL_OVERLAP_PASSES: 4,
+
+        // Collision detection and same-color bounce behavior.
+        COLLISION_CELL_SIZE: 34,
+        COLLISION_RESTITUTION: 0.88,
+
+        // Invisible retirement boundary retained for simulation behavior.
+        FLOOR_MARGIN: 48,
+
+        // Outcome queues. Retired bubbles form horizontal rows below age 50;
+        // collision and police outcomes form outward-moving side columns.
+        OUTCOME_TOKEN_GAP: 3,
+        OUTCOME_QUEUE_SMOOTHING: 9,
+        OUTCOME_GRAY_DURATION: 0.38,
+        OUTCOME_SIDE_GUTTER: 108,
+        OUTCOME_BOTTOM_GUTTER: 108,
+        OUTCOME_BASE_OPACITY: 0.5,
+        OUTCOME_VISIBLE_ROWS: 3,
+        OUTCOME_BOX_OFFSET_ROWS: 1,
+        CAPTURED_OUTER_BUBBLE_COLOR: [242, 207, 76],
+        CAPTURED_OUTER_BUBBLE_LIGHT: [255, 246, 184],
+        CAPTURED_OUTER_BUBBLE_STROKE_WIDTH: 1.5,
+        CAPTURED_INNER_BUBBLE_SCALE: 0.64,
+
+        // Large forest-green police/eater bubbles. Repulsion uses the force and
+        // range values above; set the force to 0 to disable it.
+        PREDATOR_RADIUS: 18,
+        PREDATOR_EAT_DURATION: 0.34,
+        PREDATOR_EAT_DURATION_REDUCED_MOTION: 0.12,
+        PREDATOR_WANDER: 30,
+        PREDATOR_CHASE: 45,
+        PREDATOR_DRAG: 0.996,
+        PREDATOR_INITIAL_HORIZONTAL_SPEED: 105,
+        PREDATOR_INITIAL_VERTICAL_SPEED: 90,
+        PREDATOR_TRANSPORT_SPEED: 510,
+        PREDATOR_RETURN_SPEED: 480,
+        PREDATOR_DROP_MARGIN: 5,
+        PREDATOR_RETURN_MARGIN: 42,
+
+        // Canvas resolution limits used during responsive resizing.
+        MIN_CANVAS_WIDTH: 320,
+        MIN_CANVAS_HEIGHT: 420,
+        MAX_DEVICE_PIXEL_RATIO: 2,
+
+        // Collision paint. A small splash is created only where opposite colors
+        // collide, followed by exactly one straight downward paint trail.
+        STAIN_COLOR: [148, 91, 189],
+        STAIN_COLLISION_ALPHA_MAX: 0.08,
+        STAIN_BLOT_RADIUS_MULTIPLIER: 0.9,
+        STAIN_SPLASH_DROPLETS: 8,
+        STAIN_SPLASH_SPREAD_MULTIPLIER: 1.35,
+        STAIN_SPLASH_DROPLET_MIN_MULTIPLIER: 0.06,
+        STAIN_SPLASH_DROPLET_MAX_MULTIPLIER: 0.14,
+        STAIN_DRIP_SPEED: 16,
+        STAIN_DRIP_WIDTH_MULTIPLIER: 0.34,
+
+        // Each collision stain adds the same target depth to the pool. The actual
+        // rise is deliberately slow and proportional to the current stain count.
+        LIQUID_HEIGHT_PER_STAIN: 1.7,
+        LIQUID_RISE_PER_STAIN_PER_SECOND: 0.0025,
+        LIQUID_MAX_HEIGHT_RATIO: 0.86,
+        LIQUID_FILL_ALPHA: 0.17,
+
+        // Rolling outcome window and feedback controller. The controller adjusts
+        // attraction and police eating rate, while keeping both within bounds.
+        SIMULATION_YEARS_PER_SECOND: 1,
+        OUTCOME_WINDOW_YEARS: 30,
+        STATS_REFRESH_SECONDS: 0.24,
+        OUTCOME_TARGET_RETIRED: 0.25,
+        OUTCOME_CONTROL_UPDATE_SECONDS: 0.5,
+        OUTCOME_CONTROL_MIN_EVENTS: 12,
+        OUTCOME_RETIREMENT_GAIN: 0.22,
+        OUTCOME_SPLIT_GAIN: 0.28,
+        OUTCOME_CONTROL_MIN_MULTIPLIER: 0.2,
+        OUTCOME_CONTROL_MAX_MULTIPLIER: 3,
+
+        // Canvas colors for each bubble category.
+        COLORS: {
+          blue: { core: [56, 165, 255], light: [161, 222, 255] },
+          red: { core: [255, 75, 96], light: [255, 177, 186] },
+          predator: { core: [34, 139, 72], light: [166, 222, 181] }
+        }
+      };
+
+      const COLLISION_SOUND_SOURCES = [
+        'data:audio/mpeg;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAADAAAGhQCVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dX///////////////////////////////////////////8AAABQTEFNRTMuMTAwBLkAAAAAAAAAABUgJANDQQAB4AAABoXCOIwgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//vAxAAABkwDg/QQACPBMi53M4BQp1UzRkUQJ3VPwOFwfeD4P1AmfLg/B+CBwSBjuLn+GPyjuD/g+/D9VQY8H//lAx//5QMem5aOAIAAMxhMol6X/gYkxURGAIE19F6wQknCKpg6oIJTpHp1KhQA5hgAQFwFBAaFA0tcDWFxlMguZuQ8MaeHZUPiCKSqKXs1OHEQGsma4pg2iakA5TCUqGvsqaazlqsMRyLr2d9xWlJbxd9YlEXZk0kiMkm62biNjisBRxz5djLn8kEvi0udqJwRSPM7MA7sU0NTc7DVaZvTcMRWNVX1mLeXIadqZy7bqbq0sRpJuahinwnqXctyjMSf6JQN3+6/X48qTOWpVZzpcrtWgoey6OPXNxnDH//45TS+MxmJQbEZZ////KKCnf2khmpSU1vi8raAAAAAQP5Nw+jQAlhgAP6DFgLqHWIetp4X0Q/i6ngPSWFgNcnQV6lWVPg5Wo/iUGI3qNPISi2I6Fe8Ujy01YLfe9/AYmRvfu3kKA/rquv/m+J48aJP7/0rnP9c1Y3j+K+zf//Gs33/mlZ4lGuFv/0rnOsUpDnf9FZgNJLM2SINKBoGgaPXpEW3OTEuiAm4/qA54S4iKlcg8roEjR0WSsZZLEF1Q6+UQZdkapAPi8gQclq9us7kptvH3G4k6SS7WzFSSaPXyokvBsbcW9s3/Lu28t9A3c43iplzTsOmGHrunpGzuL0k5p1zs4laN92SiUvdZnhmN4M1IFM0lnp3HwbAAMNMzGAICCYqSGAEYskmbhRgpeYWAGJBpk6gYeMEgjVMZEBEXGNKZjNsGFGOkg6ghMuQMXUBCpUZVLALyoso2ssGmV0qwqCq3NJXTMP1lnKWZ1Y2sI+sAvYoM/zo8jTMZTcfwiKL+ShGZgEteF7aemu3cdb38MwEziOZyx76WNQE/capu73rf/8A1bUMuFF5FAdm1DsTl8Ul3Lbs/lVq8y//+3DE0YARHQdRvPeAIachLD6wsAT/+T/4NExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//tQxOoAFp0DQ/m8gIAAAD/DgAAEqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg==',
+        'data:audio/mpeg;base64,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',
+        'data:audio/mpeg;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAADAAAIJgCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4OD///////////////////////////////////////////8AAABQTEFNRTMuMTAwBLkAAAAAAAAAABUgJARVQQAB4AAACCb7JzsLAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//vQxAAABowBf/QQAAQBsy8/NYBIt3dERDlbiL/9giXB95c/BBYIROD5SD4fpy5/LvB/qdB9/4gd8u/g/yngh//8Mcu8o6GOXfn5lTGw7mymRgAERJJtL5eADKDRaI5EcYIDS8LmAh4Y8aZEwSmSUyHHgYFLsGkECSEGDlyoUNMOPosw6G26o+DAVLCzT1ytdsDuM3jjogqeTXX1ORFrrMHeay+FNBiCZpaw6ay5mItaeZ0nKX3NtmkczBCeqxVLkcWmLvf9yqGW36WQSSnil6zTOi0NyUxZpsLTXyhmzTdq2HaiNBhaqxGghuDEqVbXLeWAYy+1LlaktNT269vWdntXWUxTxiik8ponCpaWVZWGtU1Pfr85nc/L+yyQwzUo4ap6KU4Wq2V3eLxarS7OxDXzVrn0GXN2s8f7M58/P633GAyLPFmf47iJzLi8eneIEmEzCZaNj1v++M2k41eyAADTp43M1Ww36MDBIuMOMs1uNDCQDM1LU22UjGA3Ko6BRPMPDMwYGgQXTQlHTxUU2TzXYCgpeFJsKhExqOybBhAE2SdiPy0i9wjAKoqTTYxJ4u0qxZIMCLfKmioyVBaJyQpeFLRaY8QhyjIjGLeQK6giHTxUcZ2IQwcs9DBUMGXKLMzJDlaYIaZL3wUXQ1Wc+2bBlaSECNI2sjQ6IsvwzjUfWPJ26RFLJlRaatBD7UhZpsyDyDJQBnB7htVgdf7YYk6jDGryxoSaKEln8tWcpm9FiCuN6kEmUzFiyLSQa7ZM7kN2V4OW/pddo6lzJog1yJ09E/lM792CnDirusoXp2xBECV8qrexFya1LpZUJfbCSNY7OXI3Zp4Yt/Bl549wRDMq3nzWMzjUwv////////////MMP1rHLe+////////////buf6y7y0LSoY4Y8ItMWA1BoFK7er8dBKEYuBCUmbWqlRDM3EDJhEwU6GQoEihjYCOrJIJmUBZVAKYsFhmcY1BOYqAEuOlqzJylTcoDl9PeisyOIKpCxfFJYsss6uhQZVIssWAucGgFlDK2cpM0Mw+0knlysBUTGApi5fYsokk7LcYAcN5WexKYbvaxJAdC1ryUig7+sQbNIc2CrVkNiSPtP/7sMT8gCviG0v5zIAM68JovzewAapbP0KIbfoYPU05MBOqNNdhLisgbJOUb7O5F6CVO/IZU9MtcKFuQ305V20uJuS/MMNhex9oJjkaf6X0l2VR74jFrk9XwnGIrqfxrEjbWKUcy1ynr/Uq2q+s5jCdtx6NXb/16uGeGGOFa1MS6YtXYGuzuFyGIHkuUHT2Ha2u6prlfHK////////////97jhrLL6mev///////////+/uwpPO25rNvep7gk3J09QAUu6WlVKqVFVIktCy5uqEldrEXda6/stGgCgAQqUHQKgFmyhYWbVRVmb5UVFf+GZmUVFRU0FBYQ34oMFBQ3oUFBQV+QU//xBQUXiCm/4L+QSCm//8Cgo7//+goKb/QUFBXgor/+EdFCgoKCn5BTwUbUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//tQxN4Dz3R3Tf2EACgAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ==',
+        'data:audio/mpeg;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAAEAAAHvgB3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3ezs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Oz7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7v////////////////////////////////8AAABQTEFNRTMuMTAwBLkAAAAAAAAAABUgJAZlQQAB4AAAB762Knh9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//vAxAAABqwBffQAACPCMy9/MZCYlkQiNCQQJIi9zhcHz5cH3xAD+ou8QAgXBBwPvWD4Pvh//xOfEb//wwsP/6w+XD/lz////4IQhuAMAIAEAAAQBhwpCVz1mAYQ8AuDgu0R7MEFul5y+QZBMUvUg4skiAKsZtxaxbkteKjCMtrjdldjooOyB6olIaDIdBGXDaZFzZBBRQayNBB0RkBq8TjiM9C22qsAWu2jTZan0xKJQqBoxLK9+1Ou9GHelL+w1Jodc2QWqeLQ1bvc+NyX7F+tXdl9rsuz5nT2r2L+1ssuU8pls1jS4Vbl3K1SRq1R16e6/zkxKmwp6Gt+tvrFY7jErbs3qbWdJQXu349Yt7xs4frHHeG7Fvty7uzVobFNl9NVvym3SaoaT6tLS58+7Sy2rS43Kb////wMp2ZUMgAAATEfwc4ZxCwPhgBECXFtGOdx6j1EsQ5mMZRN49j4msWnjhUHSDNJWQJA8h/PGx8qIhemZtNydc/8y8+ft7jj7+GFMlh9v//7Jlru5f/y2nf1x/fPLa/c51zu/931X8xw34dG5zfVZLb4fH3+13/7Wt59zrSs8MfItmXi8O6siiAAAE5FwkeZODWpXEwURog8SMFxkcnXZYpJpbLaWhdHShrHiLHW2eC1Ic8XaRVaqRJpJxeL8OIfxmssN9GhUv96gML1hULK9hR4ntBe6i4vndd//WKPJ7f4xCn3TER58axbf1SE+hfEGj6eBPE//1H3r//O/m+94+pI7J9YV0JSpe6loEX5KhACAwAAgACamJC0CgABCNIRzZQRdJQRtARkUKbhqjAgAm1DmTACEURJwEoLXA0saYopqAgw0HjZiBhjgrKgoTGAQCHTgNBAAaDjRikoGMDQkAiFhjDlU7y05IGMCtO+TPqUNYKcxljQZxdcnf9DRl65A8UYEmZkGDohiMKw0gciMxj1iMEk0VlPVStOZu7jqdapHuz/+4DE0AAQLXlZ/PWAIiilaf6w8ASKH3fhyAob+clsxRVHi5PvuwyMyncZkUoiPIZzlN21WvxrKvflNqgirot7t4LW+PJyinq1H//ukgeafiAo9R//4RVwo3CIeXhPHADII4C4BABATAwMAgAAAGKkYILwsF/wEaACwuMrd/kXJn3SuOf4DjAkJASawKKMMABQIGF0RZHC00L+gGGB1IfMF0hcZBPEvC7QsKJ44TJoZopfH8c4dJDEC+YrqS/jkC5WNS6kQH//MjZFE4m9f//6ljkkqOEY4yPsrUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/7gMT2ABulOTe5rQBB7iHnvzMiQVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//sQxNYDwAABpBwAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=',
+        'data:audio/mpeg;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAADAAAGhQCVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dX///////////////////////////////////////////8AAABQTEFNRTMuMTAwBLkAAAAAAAAAABUgJANDQQAB4AAABoXCOIwgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//vAxAAABkwDg/QQACPBMi53M4BQp1UzRkUQJ3VPwOFwfeD4P1AmfLg/B+CBwSBjuLn+GPyjuD/g+/D9VQY8H//lAx//5QMem5aOAIAAMxhMol6X/gYkxURGAIE19F6wQknCKpg6oIJTpHp1KhQA5hgAQFwFBAaFA0tcDWFxlMguZuQ8MaeHZUPiCKSqKXs1OHEQGsma4pg2iakA5TCUqGvsqaazlqsMRyLr2d9xWlJbxd9YlEXZk0kiMkm62biNjisBRxz5djLn8kEvi0udqJwRSPM7MA7sU0NTc7DVaZvTcMRWNVX1mLeXIadqZy7bqbq0sRpJuahinwnqXctyjMSf6JQN3+6/X48qTOWpVZzpcrtWgoey6OPXNxnDH//45TS+MxmJQbEZZ////KKCnf2khmpSU1vi8raAAAAAQP5Nw+jQAlhgAP6DFgLqHWIetp4X0Q/i6ngPSWFgNcnQV6lWVPg5Wo/iUGI3qNPISi2I6Fe8Ujy01YLfe9/AYmRvfu3kKA/rquv/m+J48aJP7/0rnP9c1Y3j+K+zf//Gs33/mlZ4lGuFv/0rnOsUpDnf9FZgNJLM2SINKBoGgaPXpEW3OTEuiAm4/qA54S4iKlcg8roEjR0WSsZZLEF1Q6+UQZdkapAPi8gQclq9us7kptvH3G4k6SS7WzFSSaPXyokvBsbcW9s3/Lu28t9A3c43iplzTsOmGHrunpGzuL0k5p1zs4laN92SiUvdZnhmN4M1IFM0lnp3HwbAAMNMzGAICCYqSGAEYskmbhRgpeYWAGJBpk6gYeMEgjVMZEBEXGNKZjNsGFGOkg6ghMuQMXUBCpUZVLALyoso2ssGmV0qwqCq3NJXTMP1lnKWZ1Y2sI+sAvYoM/zo8jTMZTcfwiKL+ShGZgEteF7aemu3cdb38MwEziOZyx76WNQE/capu73rf/8A1bUMuFF5FAdm1DsTl8Ul3Lbs/lVq8y//+3DE0YARHQdRvPeAIachLD6wsAT/+T/4NExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//tQxOoAFp0DQ/m8gIAAAD/DgAAEqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg=='
+      ];
+      const collisionSounds = COLLISION_SOUND_SOURCES.map(source => {
+        const audio = new Audio(source);
+        audio.preload = 'auto';
+        return audio;
+      });
+
+      function playRandomCollisionSound() {
+        const template = collisionSounds[Math.floor(Math.random() * collisionSounds.length)];
+        const sound = template.paused || template.ended ? template : template.cloneNode();
+        sound.currentTime = 0;
+        sound.volume = 0.65;
+        const playback = sound.play();
+        if (playback) playback.catch(() => {});
+      }
+
+      const canvas = document.getElementById('bubbleCanvas');
+      const ctx = canvas.getContext('2d', { alpha: true });
+      const outcomeCanvas = document.getElementById('outcomeCanvas');
+      const outcomeCtx = outcomeCanvas.getContext('2d', { alpha: true });
+      const stainCanvas = document.createElement('canvas');
+      const stainCtx = stainCanvas.getContext('2d', { alpha: true });
+      const populationValue = document.getElementById('populationValue');
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      document.documentElement.style.setProperty('--sim-chamber-width', `${CONFIG.CHAMBER_WIDTH}px`);
+      document.documentElement.style.setProperty('--sim-chamber-height', `${CONFIG.CHAMBER_HEIGHT}px`);
+      document.documentElement.style.setProperty('--sim-chamber-height-mobile', `${CONFIG.MOBILE_CHAMBER_HEIGHT}px`);
+      document.documentElement.style.setProperty('--outcome-side-gutter', `${CONFIG.OUTCOME_SIDE_GUTTER}px`);
+      document.documentElement.style.setProperty('--outcome-bottom-gutter', `${CONFIG.OUTCOME_BOTTOM_GUTTER}px`);
+
+      const shareEls = {
+        floor: document.getElementById('shareFloor'),
+        collision: document.getElementById('shareCollision'),
+        eaten: document.getElementById('shareEaten')
+      };
+
+      const colors = CONFIG.COLORS;
+
+      const bubbleImages = Object.fromEntries(Object.entries({
+        blue: 'cartel-1.svg',
+        red: 'cartel-2.svg',
+        predator: 'police.svg',
+        gray: 'grey.svg'
+      }).map(([type, source]) => {
+        const image = new Image();
+        image.decoding = 'async';
+        image.src = source;
+        return [type, image];
+      }));
+
+      const state = {
+        width: 0,
+        height: 0,
+        dpr: 1,
+        bubbles: [],
+        bursts: [],
+        outcomeTokens: [],
+        laneSequences: { bottom: 0, left: 0, right: 0 },
+        inletPulses: [],
+        accumulators: { blue: 0, red: 0 },
+        events: [],
+        time: 0,
+        lastFrame: performance.now(),
+        lastStatsPaint: 0,
+        stainDrips: [],
+        stainCount: 0,
+        liquidHeight: 0,
+        nextId: 1,
+        outcomeControl: {
+          attractionMultiplier: 1,
+          eaterMultiplier: 1,
+          elapsed: 0
+        },
+        seeded: false
+      };
+
+      const fmtInt = new Intl.NumberFormat('en-US');
+
+      function activeColorCount(type) {
+        return state.bubbles.filter(b => b.alive && !b.beingEaten && b.type === type).length;
+      }
+
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+
+      function effectiveGenerationRate(type) {
+        const count = activeColorCount(type);
+        const damping = Math.min(99, Math.max(0, type === 'blue' ? CONFIG.BLUE_DAMPING : CONFIG.RED_DAMPING)) / 100;
+        const populationFactor = Math.min(1, count / CONFIG.POPULATION_FOR_MAX_RATE);
+        const dynamicBaseline = CONFIG.MIN_GENERATION_RATE + (CONFIG.MAX_GENERATION_RATE - CONFIG.MIN_GENERATION_RATE) * populationFactor;
+        const dynamic = type === 'blue' ? CONFIG.BLUE_DYNAMIC_GENERATION : CONFIG.RED_DYNAMIC_GENERATION;
+        const baseline = dynamic ? dynamicBaseline : CONFIG.STATIC_GENERATION_RATE;
+        return baseline * (1 - damping) * Math.max(0, CONFIG.GENERATION_MULTIPLIER);
+      }
+
+      function recordEvent(type, count = 1) {
+        state.events.push({ type, count, time: state.time });
+      }
+
+      function recentOutcomeCounts() {
+        const windowSeconds = CONFIG.OUTCOME_WINDOW_YEARS / CONFIG.SIMULATION_YEARS_PER_SECOND;
+        const cutoff = state.time - windowSeconds;
+        const outcomes = { floor: 0, collision: 0, eaten: 0 };
+        for (const event of state.events) {
+          if (event.time >= cutoff && Object.hasOwn(outcomes, event.type)) outcomes[event.type] += event.count;
+        }
+        return outcomes;
+      }
+
+      function effectiveEaterRate() {
+        return clamp(CONFIG.EATER_RATE * state.outcomeControl.eaterMultiplier, 0, CONFIG.MAX_EATER_RATE);
+      }
+
+      function updateOutcomeBalance(dt) {
+        const control = state.outcomeControl;
+        control.elapsed += dt;
+        if (control.elapsed < CONFIG.OUTCOME_CONTROL_UPDATE_SECONDS) return;
+
+        const elapsed = control.elapsed;
+        control.elapsed = 0;
+        const outcomes = recentOutcomeCounts();
+        const total = outcomes.floor + outcomes.collision + outcomes.eaten;
+        if (total < CONFIG.OUTCOME_CONTROL_MIN_EVENTS) return;
+
+        const retiredShare = outcomes.floor / total;
+        const collisionShare = outcomes.collision / total;
+        const eatenShare = outcomes.eaten / total;
+        const retirementCorrection = (retiredShare - CONFIG.OUTCOME_TARGET_RETIRED) * CONFIG.OUTCOME_RETIREMENT_GAIN;
+        const splitCorrection = (collisionShare - eatenShare) * CONFIG.OUTCOME_SPLIT_GAIN;
+        const minMultiplier = CONFIG.OUTCOME_CONTROL_MIN_MULTIPLIER;
+        const maxMultiplier = CONFIG.OUTCOME_CONTROL_MAX_MULTIPLIER;
+
+        control.attractionMultiplier = clamp(
+          control.attractionMultiplier * Math.exp((retirementCorrection - splitCorrection) * elapsed),
+          minMultiplier,
+          maxMultiplier
+        );
+        control.eaterMultiplier = clamp(
+          control.eaterMultiplier * Math.exp((retirementCorrection + splitCorrection) * elapsed),
+          minMultiplier,
+          maxMultiplier
+        );
+      }
+
+      function seededRandom(index) {
+        const value = Math.sin(index * 91.733 + 14.82) * 43758.5453;
+        return value - Math.floor(value);
+      }
+
+      function createBubble(type, options = {}) {
+        const w = state.width;
+        const h = state.height;
+        if (!w || !h || state.bubbles.length >= CONFIG.MAX_TOTAL_BUBBLES) return null;
+
+        const seed = state.nextId++;
+        const r = Math.min(CONFIG.PREY_RADIUS_MAX, Math.max(CONFIG.PREY_RADIUS_MIN, CONFIG.PREY_RADIUS));
+        const fromInlet = options.fromInlet !== false;
+        const inletStart = type === 'blue' ? CONFIG.BLUE_INLET_START : CONFIG.RED_INLET_START;
+        const inletEnd = type === 'blue' ? CONFIG.BLUE_INLET_END : CONFIG.RED_INLET_END;
+        const inletX = w * (inletStart + seededRandom(seed + 1) * (inletEnd - inletStart));
+        const x = options.x ?? (fromInlet ? inletX : 32 + seededRandom(seed + 1) * Math.max(40, w - 76));
+        const y = options.y ?? (fromInlet ? r + 4 : 52 + seededRandom(seed + 2) * Math.max(40, h - 115));
+        const speed = CONFIG.INLET_SPEED_MIN + seededRandom(seed + 3) * (CONFIG.INLET_SPEED_MAX - CONFIG.INLET_SPEED_MIN);
+        const angle = fromInlet ? Math.PI * 0.5 + (seededRandom(seed + 4) - 0.5) * CONFIG.INLET_ANGLE_SPREAD : seededRandom(seed + 4) * Math.PI * 2;
+
+        const bubble = {
+          id: seed,
+          type,
+          x: Math.max(r + 2, Math.min(w - r - 2, x)),
+          y: Math.max(r + 2, Math.min(h - r - 2, y)),
+          vx: fromInlet ? Math.cos(angle) * speed : Math.cos(angle) * speed * 0.55,
+          vy: fromInlet ? Math.sin(angle) * speed + CONFIG.INLET_DOWNWARD_BIAS : Math.sin(angle) * speed * 0.45,
+          r,
+          mass: r * r,
+          phase: seededRandom(seed + 5) * Math.PI * 2,
+          age: 0,
+          alive: true,
+          beingEaten: false,
+          captured: false,
+          eatProgress: 0,
+          eaterId: null,
+          flash: fromInlet ? 1 : 0
+        };
+
+        state.bubbles.push(bubble);
+        if (fromInlet) {
+          recordEvent(type);
+          state.inletPulses.push({ type, x: inletX, life: 0, maxLife: CONFIG.INLET_PULSE_DURATION });
+        }
+        return bubble;
+      }
+
+      function createPredator() {
+        const seed = state.nextId++;
+        const floorY = state.height - CONFIG.FLOOR_MARGIN;
+        const eatRate = effectiveEaterRate();
+        const bubble = {
+          id: seed,
+          type: 'predator',
+          x: CONFIG.PREDATOR_RADIUS + 24 + seededRandom(seed + 1) * Math.max(40, state.width - CONFIG.PREDATOR_RADIUS * 2 - 48),
+          y: CONFIG.PREDATOR_RADIUS + 34 + seededRandom(seed + 2) * Math.max(40, floorY - CONFIG.PREDATOR_RADIUS * 2 - 68),
+          vx: (seededRandom(seed + 3) - 0.5) * CONFIG.PREDATOR_INITIAL_HORIZONTAL_SPEED,
+          vy: (seededRandom(seed + 4) - 0.5) * CONFIG.PREDATOR_INITIAL_VERTICAL_SPEED,
+          r: CONFIG.PREDATOR_RADIUS,
+          mass: CONFIG.PREDATOR_RADIUS * CONFIG.PREDATOR_RADIUS,
+          phase: seededRandom(seed + 5) * Math.PI * 2,
+          eatAccumulator: eatRate > 0 ? seededRandom(seed + 6) / eatRate : 0,
+          mode: 'roam',
+          targetId: null,
+          carryingId: null,
+          returnX: 0,
+          returnY: 0,
+          age: 0,
+          alive: true,
+          flash: 0
+        };
+        state.bubbles.push(bubble);
+        return bubble;
+      }
+
+      function seedPopulation() {
+        state.bubbles.length = 0;
+        const desired = state.width < CONFIG.MOBILE_POPULATION_BREAKPOINT ? CONFIG.INITIAL_PREY_MOBILE : CONFIG.INITIAL_PREY_DESKTOP;
+        const radius = Math.min(CONFIG.PREY_RADIUS_MAX, Math.max(CONFIG.PREY_RADIUS_MIN, CONFIG.PREY_RADIUS));
+        const centerGap = Math.max(20, state.width * 0.06);
+        const leftEdge = radius + 22;
+        const rightEdge = state.width - radius - 22;
+        const blueRightEdge = state.width * 0.5 - centerGap * 0.5;
+        const redLeftEdge = state.width * 0.5 + centerGap * 0.5;
+        const topEdge = radius + 22;
+        const bottomEdge = state.height - CONFIG.FLOOR_MARGIN - radius - 12;
+        const topBias = Math.max(1, CONFIG.INITIAL_TOP_BIAS);
+
+        for (let i = 0; i < desired; i += 1) {
+          const type = i % 2 === 0 ? 'blue' : 'red';
+          const horizontalSeed = seededRandom(i + 1000);
+          const verticalSeed = Math.pow(seededRandom(i + 2000), topBias);
+          const xStart = type === 'blue' ? leftEdge : redLeftEdge;
+          const xEnd = type === 'blue' ? blueRightEdge : rightEdge;
+          const bubble = createBubble(type, {
+            fromInlet: false,
+            x: xStart + horizontalSeed * Math.max(20, xEnd - xStart),
+            y: topEdge + verticalSeed * Math.max(40, bottomEdge - topEdge)
+          });
+          if (bubble) {
+            bubble.vx = (seededRandom(i + 4000) - 0.5) * CONFIG.INITIAL_HORIZONTAL_SPEED;
+            bubble.vy = (seededRandom(i + 5000) - 0.5) * CONFIG.INITIAL_VERTICAL_SPEED + CONFIG.INITIAL_DOWNWARD_SPEED;
+          }
+        }
+        syncPredators(0);
+        separateInitialOverlaps();
+        state.seeded = true;
+      }
+
+      function separateInitialOverlaps() {
+        for (let pass = 0; pass < CONFIG.INITIAL_OVERLAP_PASSES; pass += 1) {
+          for (let i = 0; i < state.bubbles.length; i += 1) {
+            const a = state.bubbles[i];
+            for (let j = i + 1; j < state.bubbles.length; j += 1) {
+              const b = state.bubbles[j];
+              const dx = b.x - a.x;
+              const dy = b.y - a.y;
+              const min = a.r + b.r + 1;
+              const d2 = dx * dx + dy * dy;
+              if (d2 < min * min) {
+                const d = Math.sqrt(d2) || 1;
+                const nx = dx / d;
+                const ny = dy / d;
+                const push = (min - d) * 0.5;
+                a.x -= nx * push;
+                a.y -= ny * push;
+                b.x += nx * push;
+                b.y += ny * push;
+              }
+            }
+          }
+        }
+      }
+
+      function outcomeLaneCapacity(lane, radius) {
+        const spacing = radius * 2 + CONFIG.OUTCOME_TOKEN_GAP;
+        const available = lane === 'bottom'
+          ? state.width - radius * 2 - 8
+          : state.height - CONFIG.FLOOR_MARGIN - radius * 2 - 16;
+        return Math.max(1, Math.floor(available / spacing) + 1);
+      }
+
+      function updateOutcomeTarget(token) {
+        const spacing = token.r * 2 + CONFIG.OUTCOME_TOKEN_GAP;
+        const capacity = outcomeLaneCapacity(token.lane, token.r);
+        const currentLine = Math.floor(Math.max(0, state.laneSequences[token.lane] - 1) / capacity);
+        const tokenLine = Math.floor(token.sequence / capacity);
+        const depth = Math.max(0, currentLine - tokenLine);
+        const slot = token.sequence % capacity;
+        token.depth = depth;
+        token.targetOpacity = Math.max(
+          0,
+          CONFIG.OUTCOME_BASE_OPACITY * (1 - depth / CONFIG.OUTCOME_VISIBLE_ROWS)
+        );
+
+        if (token.lane === 'bottom') {
+          token.targetX = token.r + 4 + slot * spacing;
+          token.targetY = state.height + token.r + CONFIG.OUTCOME_TOKEN_GAP
+            + (CONFIG.OUTCOME_BOX_OFFSET_ROWS + depth) * spacing;
+          return;
+        }
+
+        token.targetY = token.r + 8 + slot * spacing;
+        const outward = (CONFIG.OUTCOME_BOX_OFFSET_ROWS + depth) * spacing;
+        token.targetX = token.lane === 'left'
+          ? -token.r - CONFIG.OUTCOME_TOKEN_GAP - outward
+          : state.width + token.r + CONFIG.OUTCOME_TOKEN_GAP + outward;
+      }
+
+      function queueOutcomeToken(lane, bubble) {
+        const token = {
+          lane,
+          sequence: state.laneSequences[lane]++,
+          sourceType: bubble.type,
+          x: bubble.x,
+          y: bubble.y,
+          targetX: bubble.x,
+          targetY: bubble.y,
+          r: bubble.r,
+          gray: 0,
+          opacity: CONFIG.OUTCOME_BASE_OPACITY,
+          targetOpacity: CONFIG.OUTCOME_BASE_OPACITY,
+          depth: 0,
+          alive: true
+        };
+        state.outcomeTokens.push(token);
+        updateOutcomeTarget(token);
+      }
+
+      function updateOutcomeTokens(dt) {
+        const smoothing = 1 - Math.exp(-CONFIG.OUTCOME_QUEUE_SMOOTHING * dt);
+        for (const token of state.outcomeTokens) {
+          if (token.lane === 'bottom') {
+            token.gray = Math.min(1, token.gray + dt / CONFIG.OUTCOME_GRAY_DURATION);
+          }
+          updateOutcomeTarget(token);
+          token.x += (token.targetX - token.x) * smoothing;
+          token.y += (token.targetY - token.y) * smoothing;
+          token.opacity += (token.targetOpacity - token.opacity) * smoothing;
+          if (token.depth >= CONFIG.OUTCOME_VISIBLE_ROWS && token.opacity < 0.01) {
+            token.alive = false;
+          }
+          if (token.lane === 'left' && token.x + token.r < -CONFIG.OUTCOME_SIDE_GUTTER - 4) token.alive = false;
+          if (token.lane === 'right' && token.x - token.r > state.width + CONFIG.OUTCOME_SIDE_GUTTER + 4) token.alive = false;
+          if (token.lane === 'bottom' && token.y - token.r > state.height + CONFIG.OUTCOME_BOTTOM_GUTTER + 4) token.alive = false;
+        }
+        state.outcomeTokens = state.outcomeTokens.filter(token => token.alive);
+      }
+
+      function resizeCanvas() {
+        const rect = canvas.getBoundingClientRect();
+        const oldW = state.width || rect.width;
+        const oldH = state.height || rect.height;
+        state.dpr = Math.min(window.devicePixelRatio || 1, CONFIG.MAX_DEVICE_PIXEL_RATIO);
+        state.width = Math.max(CONFIG.MIN_CANVAS_WIDTH, Math.round(rect.width));
+        state.height = Math.max(CONFIG.MIN_CANVAS_HEIGHT, Math.round(rect.height));
+        canvas.width = Math.round(state.width * state.dpr);
+        canvas.height = Math.round(state.height * state.dpr);
+        ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+        outcomeCanvas.width = Math.round((state.width + CONFIG.OUTCOME_SIDE_GUTTER * 2) * state.dpr);
+        outcomeCanvas.height = Math.round((state.height + CONFIG.OUTCOME_BOTTOM_GUTTER) * state.dpr);
+        outcomeCtx.setTransform(
+          state.dpr,
+          0,
+          0,
+          state.dpr,
+          CONFIG.OUTCOME_SIDE_GUTTER * state.dpr,
+          0
+        );
+        stainCanvas.width = Math.round(state.width * state.dpr);
+        stainCanvas.height = Math.round(state.height * state.dpr);
+        stainCtx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+
+        if (state.seeded && oldW && oldH) {
+          const sx = state.width / oldW;
+          const sy = state.height / oldH;
+          for (const b of state.bubbles) {
+            b.x = Math.min(state.width - b.r - 2, Math.max(b.r + 2, b.x * sx));
+            b.y = Math.min(state.height - b.r - 3, Math.max(b.r + 2, b.y * sy));
+          }
+          for (const token of state.outcomeTokens) {
+            token.x *= sx;
+            token.y *= sy;
+            updateOutcomeTarget(token);
+          }
+          for (const drip of state.stainDrips) {
+            drip.x *= sx;
+            drip.currentY *= sy;
+            drip.width *= sx;
+          }
+          state.liquidHeight = Math.min(state.height * CONFIG.LIQUID_MAX_HEIGHT_RATIO, state.liquidHeight * sy);
+        }
+      }
+
+      function spawnFromAccumulator(type, dt) {
+        state.accumulators[type] += effectiveGenerationRate(type) * dt;
+        while (state.accumulators[type] >= 1) {
+          createBubble(type);
+          state.accumulators[type] -= 1;
+        }
+      }
+
+      function scheduleMeal(predator) {
+        if (predator.mode !== 'roam') return false;
+        const candidates = state.bubbles.filter(b => b.alive && (b.type === 'blue' || b.type === 'red') && !b.beingEaten);
+        if (!candidates.length) return false;
+        let target = candidates[0];
+        let bestDistance = Infinity;
+        for (const candidate of candidates) {
+          const dx = candidate.x - predator.x;
+          const dy = candidate.y - predator.y;
+          const distance = dx * dx + dy * dy;
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            target = candidate;
+          }
+        }
+        target.beingEaten = true;
+        target.eatProgress = 0;
+        target.eaterId = predator.id;
+        predator.mode = 'arresting';
+        predator.targetId = target.id;
+        return true;
+      }
+
+      function syncPredators(dt) {
+        const desired = Math.min(CONFIG.MAX_PREDATORS, Math.max(0, Math.round(CONFIG.PREDATOR_COUNT)));
+        const eatRate = effectiveEaterRate();
+        let predators = state.bubbles.filter(b => b.alive && b.type === 'predator');
+        while (predators.length < desired) predators.push(createPredator());
+        while (predators.length > desired) {
+          const removed = predators.pop();
+          removed.alive = false;
+          for (const prey of state.bubbles) {
+            if (prey.eaterId === removed.id) {
+              prey.beingEaten = false;
+              prey.captured = false;
+              prey.eatProgress = 0;
+              prey.eaterId = null;
+            }
+          }
+        }
+
+        for (const predator of predators) {
+          if (eatRate <= 0) {
+            predator.eatAccumulator = 0;
+            continue;
+          }
+          const eatInterval = 1 / eatRate;
+          predator.eatAccumulator += dt;
+          while (predator.eatAccumulator >= eatInterval) {
+            if (!scheduleMeal(predator)) {
+              predator.eatAccumulator = Math.min(eatInterval, predator.eatAccumulator);
+              break;
+            }
+            predator.eatAccumulator -= eatInterval;
+          }
+        }
+      }
+
+      function randomBetween(min, max) {
+        return min + Math.random() * (max - min);
+      }
+
+      function addCollisionStain(x, y, radius) {
+        state.stainCount += 1;
+        const opacity = CONFIG.STAIN_COLLISION_ALPHA_MAX * Math.min(100, Math.max(0, CONFIG.STAIN_OPACITY)) / 100;
+        if (opacity <= 0) return;
+
+        stainCtx.save();
+        stainCtx.globalAlpha = opacity;
+        stainCtx.fillStyle = rgba(CONFIG.STAIN_COLOR, 1);
+        stainCtx.beginPath();
+        stainCtx.arc(x, y, radius * CONFIG.STAIN_BLOT_RADIUS_MULTIPLIER, 0, Math.PI * 2);
+        stainCtx.fill();
+
+        const dropletCount = reduceMotion ? Math.ceil(CONFIG.STAIN_SPLASH_DROPLETS * 0.5) : CONFIG.STAIN_SPLASH_DROPLETS;
+        for (let index = 0; index < dropletCount; index += 1) {
+          const angle = index / dropletCount * Math.PI * 2 + Math.random() * 0.42;
+          const distance = radius * CONFIG.STAIN_SPLASH_SPREAD_MULTIPLIER * (0.45 + Math.random() * 0.55);
+          const dropletRadius = radius * randomBetween(
+            CONFIG.STAIN_SPLASH_DROPLET_MIN_MULTIPLIER,
+            CONFIG.STAIN_SPLASH_DROPLET_MAX_MULTIPLIER
+          );
+          stainCtx.beginPath();
+          stainCtx.arc(x + Math.cos(angle) * distance, y + Math.sin(angle) * distance, dropletRadius, 0, Math.PI * 2);
+          stainCtx.fill();
+        }
+        stainCtx.restore();
+
+        state.stainDrips.push({
+          x,
+          currentY: y + radius * CONFIG.STAIN_BLOT_RADIUS_MULTIPLIER * 0.55,
+          width: Math.max(0.8, radius * CONFIG.STAIN_DRIP_WIDTH_MULTIPLIER),
+          speed: CONFIG.STAIN_DRIP_SPEED * (0.86 + Math.random() * 0.28),
+          alpha: opacity
+        });
+      }
+
+      function popPair(a, b) {
+        if (!a.alive || !b.alive) return;
+        a.alive = false;
+        b.alive = false;
+        playRandomCollisionSound();
+        recordEvent('collision', 2);
+        const mx = (a.x + b.x) * 0.5;
+        const my = (a.y + b.y) * 0.5;
+        addCollisionStain(mx, my, (a.r + b.r) * 0.5);
+        for (const bubble of [a, b]) {
+          const particleCount = reduceMotion ? 4 : Math.round(7 + bubble.r * 0.45);
+          const particles = [];
+          for (let i = 0; i < particleCount; i += 1) {
+            const angle = (i / particleCount) * Math.PI * 2 + Math.random() * 0.3;
+            const speed = 40 + Math.random() * 75;
+            particles.push({
+              x: bubble.x,
+              y: bubble.y,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              size: 0.9 + Math.random() * 1.7
+            });
+          }
+          state.bursts.push({
+            x: bubble.x,
+            y: bubble.y,
+            r: bubble.r,
+            type: bubble.type,
+            life: 0,
+            maxLife: reduceMotion ? 0.18 : 0.5,
+            particles,
+            centerX: mx,
+            centerY: my
+          });
+        }
+        queueOutcomeToken('left', a);
+        queueOutcomeToken('left', b);
+      }
+
+      function resolveSameColor(a, b, dx, dy, distance, minDistance) {
+        const nx = distance > 0 ? dx / distance : 1;
+        const ny = distance > 0 ? dy / distance : 0;
+        const overlap = minDistance - distance;
+        const totalMass = a.mass + b.mass;
+        const aShare = b.mass / totalMass;
+        const bShare = a.mass / totalMass;
+        a.x -= nx * overlap * aShare;
+        a.y -= ny * overlap * aShare;
+        b.x += nx * overlap * bShare;
+        b.y += ny * overlap * bShare;
+
+        const rvx = b.vx - a.vx;
+        const rvy = b.vy - a.vy;
+        const closingSpeed = rvx * nx + rvy * ny;
+        if (closingSpeed >= 0) return;
+
+        const restitution = CONFIG.COLLISION_RESTITUTION;
+        const impulse = -(1 + restitution) * closingSpeed / (1 / a.mass + 1 / b.mass);
+        const ix = impulse * nx;
+        const iy = impulse * ny;
+        a.vx -= ix / a.mass;
+        a.vy -= iy / a.mass;
+        b.vx += ix / b.mass;
+        b.vy += iy / b.mass;
+      }
+
+      function applyOppositeColorGravity(a, b, dx, dy, distance, dt, range, force) {
+        if (a.type === b.type || distance >= range) return;
+        const falloff = 1 - distance / range;
+        const acceleration = force * falloff * falloff;
+        const impulseX = dx / distance * acceleration * dt;
+        const impulseY = dy / distance * acceleration * dt;
+        a.vx += impulseX;
+        a.vy += impulseY;
+        b.vx -= impulseX;
+        b.vy -= impulseY;
+      }
+
+      function applyPredatorRepulsion(dt) {
+        const force = Math.max(0, CONFIG.PREDATOR_REPULSION_FORCE);
+        const range = Math.max(0, CONFIG.PREDATOR_REPULSION_RANGE);
+        if (force === 0 || range === 0) return;
+
+        const predators = state.bubbles.filter(b => b.alive && b.type === 'predator' && (b.mode === 'roam' || b.mode === 'arresting'));
+        for (let i = 0; i < predators.length; i += 1) {
+          const a = predators[i];
+          for (let j = i + 1; j < predators.length; j += 1) {
+            const b = predators[j];
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            let distance = Math.hypot(dx, dy);
+            if (distance >= range) continue;
+            if (distance < 0.001) {
+              const angle = seededRandom(a.id + b.id) * Math.PI * 2;
+              dx = Math.cos(angle);
+              dy = Math.sin(angle);
+              distance = 1;
+            }
+            const falloff = 1 - distance / range;
+            const impulse = force * falloff * falloff * dt;
+            const impulseX = dx / distance * impulse;
+            const impulseY = dy / distance * impulse;
+            a.vx -= impulseX;
+            a.vy -= impulseY;
+            b.vx += impulseX;
+            b.vy += impulseY;
+          }
+        }
+      }
+
+      function handleInteractions(dt) {
+        const attractionForce = Math.max(0, CONFIG.OPPOSITE_COLOR_ATTRACTION_FORCE * state.outcomeControl.attractionMultiplier);
+        const attractionRange = Math.max(0, CONFIG.OPPOSITE_COLOR_ATTRACTION_RANGE);
+        const cellSize = Math.max(CONFIG.COLLISION_CELL_SIZE, attractionRange);
+        const grid = new Map();
+        for (const b of state.bubbles) {
+          if (!b.alive || b.type === 'predator' || b.beingEaten) continue;
+          const cx = Math.floor(b.x / cellSize);
+          const cy = Math.floor(b.y / cellSize);
+          const key = `${cx},${cy}`;
+          if (!grid.has(key)) grid.set(key, []);
+          grid.get(key).push(b);
+        }
+
+        const tested = new Set();
+        for (const [key, group] of grid) {
+          const [cx, cy] = key.split(',').map(Number);
+          const nearby = [];
+          for (let ox = -1; ox <= 1; ox += 1) {
+            for (let oy = -1; oy <= 1; oy += 1) {
+              const other = grid.get(`${cx + ox},${cy + oy}`);
+              if (other) nearby.push(...other);
+            }
+          }
+
+          for (const a of group) {
+            if (!a.alive || a.type === 'predator' || a.beingEaten) continue;
+            for (const b of nearby) {
+              if (a.id === b.id || !b.alive || b.type === 'predator' || b.beingEaten) continue;
+              const pairKey = a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`;
+              if (tested.has(pairKey)) continue;
+              tested.add(pairKey);
+
+              const dx = b.x - a.x;
+              const dy = b.y - a.y;
+              const minDistance = a.r + b.r;
+              const d2 = dx * dx + dy * dy;
+              const attracting = attractionForce > 0 && a.type !== b.type && d2 < attractionRange * attractionRange;
+              const colliding = d2 < minDistance * minDistance;
+              if (!attracting && !colliding) continue;
+
+              const distance = Math.sqrt(d2) || 0.001;
+              if (colliding) {
+                if (a.type !== b.type) popPair(a, b);
+                else resolveSameColor(a, b, dx, dy, distance, minDistance);
+              } else {
+                applyOppositeColorGravity(a, b, dx, dy, distance, dt, attractionRange, attractionForce);
+              }
+            }
+          }
+        }
+      }
+
+      function moveToward(bubble, targetX, targetY, speed, dt) {
+        const dx = targetX - bubble.x;
+        const dy = targetY - bubble.y;
+        const distance = Math.hypot(dx, dy);
+        if (distance <= Math.max(1, speed * dt)) {
+          bubble.x = targetX;
+          bubble.y = targetY;
+          bubble.vx = 0;
+          bubble.vy = 0;
+          return true;
+        }
+        bubble.vx = dx / distance * speed;
+        bubble.vy = dy / distance * speed;
+        bubble.x += bubble.vx * dt;
+        bubble.y += bubble.vy * dt;
+        return false;
+      }
+
+      function choosePredatorReturnPoint(predator) {
+        const floorY = state.height - CONFIG.FLOOR_MARGIN;
+        const margin = Math.max(predator.r + 4, CONFIG.PREDATOR_RETURN_MARGIN);
+        const maxX = Math.max(margin, state.width - margin);
+        const maxY = Math.max(margin, floorY - margin);
+        predator.returnX = randomBetween(margin, maxX);
+        predator.returnY = randomBetween(margin, maxY);
+      }
+
+      function dropCapturedBubble(predator) {
+        const captive = state.bubbles.find(bubble => bubble.alive && bubble.id === predator.carryingId);
+        if (captive) {
+          captive.x = Math.min(state.width - captive.r - 2, predator.x);
+          captive.y = predator.y;
+          queueOutcomeToken('right', captive);
+          captive.alive = false;
+          recordEvent('eaten');
+        }
+        predator.carryingId = null;
+        choosePredatorReturnPoint(predator);
+        predator.mode = 'returning';
+      }
+
+      function updateBubbles(dt) {
+        const w = state.width;
+        const h = state.height;
+        const floorY = h - CONFIG.FLOOR_MARGIN;
+        const topLimit = 1;
+        const horizontalMotionScale = Math.min(CONFIG.HORIZONTAL_MOTION_MAX, Math.max(CONFIG.HORIZONTAL_MOTION_MIN, CONFIG.HORIZONTAL_MOTION)) / 100;
+        const gravity = Math.min(CONFIG.GRAVITY_MAX, Math.max(CONFIG.GRAVITY_MIN, CONFIG.GRAVITY));
+        applyPredatorRepulsion(dt);
+        for (const b of state.bubbles) {
+          if (!b.alive) continue;
+          b.age += dt;
+          b.phase += dt * (0.8 + 7 / b.r);
+          b.flash = Math.max(0, b.flash - dt * 2.8);
+
+          if (b.type === 'predator') {
+            if (b.mode === 'transporting') {
+              const captive = state.bubbles.find(candidate => candidate.alive && candidate.id === b.carryingId);
+              if (!captive) {
+                b.carryingId = null;
+                choosePredatorReturnPoint(b);
+                b.mode = 'returning';
+                continue;
+              }
+              const dropX = w - CONFIG.PREDATOR_DROP_MARGIN;
+              const dropY = clamp(b.y, b.r + 8, floorY - b.r - 8);
+              const arrived = moveToward(b, dropX, dropY, CONFIG.PREDATOR_TRANSPORT_SPEED, dt);
+              captive.x = b.x;
+              captive.y = b.y;
+              if (arrived) dropCapturedBubble(b);
+              continue;
+            }
+
+            if (b.mode === 'returning') {
+              const returnX = clamp(b.returnX || w * 0.5, b.r + 4, w - b.r - 4);
+              const returnY = clamp(b.returnY || b.y, b.r + 8, floorY - b.r - 8);
+              if (moveToward(b, returnX, returnY, CONFIG.PREDATOR_RETURN_SPEED, dt)) {
+                b.mode = 'roam';
+                b.targetId = null;
+                const eatRate = effectiveEaterRate();
+                b.eatAccumulator = eatRate > 0 ? 1 / eatRate : 0;
+              }
+              continue;
+            }
+
+            const prey = b.mode === 'arresting'
+              ? state.bubbles.find(candidate => candidate.alive && candidate.id === b.targetId && candidate.eaterId === b.id)
+              : null;
+            let steerX = 0;
+            let steerY = 0;
+            if (prey) {
+              const dx = prey.x - b.x;
+              const dy = prey.y - b.y;
+              const distance = Math.hypot(dx, dy) || 1;
+              steerX = dx / distance * CONFIG.PREDATOR_CHASE;
+              steerY = dy / distance * CONFIG.PREDATOR_CHASE;
+            } else if (b.mode === 'arresting') {
+              b.mode = 'roam';
+              b.targetId = null;
+            }
+            b.vx += (Math.sin(state.time * 0.9 + b.phase) * CONFIG.PREDATOR_WANDER + steerX) * dt;
+            b.vy += (Math.cos(state.time * 0.78 + b.phase * 1.2) * CONFIG.PREDATOR_WANDER + steerY) * dt;
+            b.vx *= Math.pow(CONFIG.PREDATOR_DRAG, dt * 60);
+            b.vy *= Math.pow(CONFIG.PREDATOR_DRAG, dt * 60);
+            b.x += b.vx * dt;
+            b.y += b.vy * dt;
+
+            if (b.x - b.r < 0) {
+              b.x = b.r;
+              b.vx = Math.abs(b.vx);
+            } else if (b.x + b.r > w) {
+              b.x = w - b.r;
+              b.vx = -Math.abs(b.vx);
+            }
+            if (b.y - b.r < topLimit) {
+              b.y = b.r + topLimit;
+              b.vy = Math.abs(b.vy);
+            } else if (b.y + b.r > floorY - 2) {
+              b.y = floorY - b.r - 2;
+              b.vy = -Math.abs(b.vy);
+            }
+            continue;
+          }
+
+          if (b.beingEaten) {
+            const eater = state.bubbles.find(candidate => candidate.alive && candidate.id === b.eaterId && candidate.type === 'predator');
+            if (!eater) {
+              b.beingEaten = false;
+              b.captured = false;
+              b.eatProgress = 0;
+              b.eaterId = null;
+            } else if (b.captured) {
+              b.x = eater.x;
+              b.y = eater.y;
+            } else {
+              b.eatProgress += dt / (reduceMotion ? CONFIG.PREDATOR_EAT_DURATION_REDUCED_MOTION : CONFIG.PREDATOR_EAT_DURATION);
+              const pull = Math.min(1, dt * 9);
+              b.x += (eater.x - b.x) * pull;
+              b.y += (eater.y - b.y) * pull;
+              if (b.eatProgress >= 1) {
+                b.captured = true;
+                b.x = eater.x;
+                b.y = eater.y;
+                eater.mode = 'transporting';
+                eater.targetId = null;
+                eater.carryingId = b.id;
+              }
+            }
+            continue;
+          }
+
+          const turbulenceX = (Math.sin(state.time * 1.18 + b.phase * 1.7) * CONFIG.HORIZONTAL_WANDER_PRIMARY
+            + Math.cos(state.time * 0.51 + b.phase * 0.8) * CONFIG.HORIZONTAL_WANDER_SECONDARY) * horizontalMotionScale;
+          const turbulenceY = Math.cos(state.time * 0.74 + b.phase) * CONFIG.VERTICAL_WANDER;
+          b.vx += turbulenceX * dt;
+          b.vy += (gravity + turbulenceY) * dt;
+
+          const drag = Math.pow(CONFIG.HORIZONTAL_DRAG, dt * 60);
+          b.vx *= drag;
+          b.vy *= Math.pow(CONFIG.VERTICAL_DRAG, dt * 60);
+          const speed = Math.hypot(b.vx, b.vy);
+          if (speed > CONFIG.MAX_PREY_SPEED) {
+            b.vx = b.vx / speed * CONFIG.MAX_PREY_SPEED;
+            b.vy = b.vy / speed * CONFIG.MAX_PREY_SPEED;
+          }
+
+          b.x += b.vx * dt;
+          b.y += b.vy * dt;
+
+          if (b.x - b.r < 0) {
+            b.x = b.r;
+            b.vx = Math.abs(b.vx) * CONFIG.WALL_RESTITUTION;
+          } else if (b.x + b.r > w) {
+            b.x = w - b.r;
+            b.vx = -Math.abs(b.vx) * CONFIG.WALL_RESTITUTION;
+          }
+
+          if (b.y - b.r < topLimit) {
+            b.y = b.r + topLimit;
+            b.vy = Math.abs(b.vy) * CONFIG.CEILING_RESTITUTION;
+          }
+
+          if (b.y + b.r >= floorY) {
+            b.y = floorY - b.r + 1;
+            queueOutcomeToken('bottom', b);
+            b.alive = false;
+            recordEvent('floor');
+          }
+        }
+
+        handleInteractions(dt);
+        state.bubbles = state.bubbles.filter(b => b.alive);
+      }
+
+      function updateEffects(dt) {
+        for (const burst of state.bursts) {
+          burst.life += dt;
+          for (const particle of burst.particles) {
+            particle.x += particle.vx * dt;
+            particle.y += particle.vy * dt;
+            particle.vx *= Math.pow(0.95, dt * 60);
+            particle.vy *= Math.pow(0.95, dt * 60);
+            particle.vy += 28 * dt;
+          }
+        }
+        state.bursts = state.bursts.filter(burst => burst.life < burst.maxLife);
+
+        for (const pulse of state.inletPulses) pulse.life += dt;
+        state.inletPulses = state.inletPulses.filter(p => p.life < p.maxLife);
+      }
+
+      function updateStains(dt) {
+        if (!state.stainDrips.length) return;
+        const liquidTop = state.height - state.liquidHeight;
+        stainCtx.save();
+        stainCtx.strokeStyle = rgba(CONFIG.STAIN_COLOR, 1);
+        stainCtx.lineCap = 'round';
+        for (const drip of state.stainDrips) {
+          const nextY = Math.min(liquidTop, drip.currentY + drip.speed * dt);
+          stainCtx.globalAlpha = drip.alpha;
+          stainCtx.lineWidth = drip.width;
+          stainCtx.beginPath();
+          stainCtx.moveTo(drip.x, drip.currentY);
+          stainCtx.lineTo(drip.x, nextY);
+          stainCtx.stroke();
+          drip.currentY = nextY;
+        }
+        stainCtx.restore();
+        state.stainDrips = state.stainDrips.filter(drip => drip.currentY < liquidTop - 0.1);
+      }
+
+      function updateLiquid(dt) {
+        const maximumHeight = state.height * CONFIG.LIQUID_MAX_HEIGHT_RATIO;
+        const targetHeight = Math.min(maximumHeight, state.stainCount * CONFIG.LIQUID_HEIGHT_PER_STAIN);
+        const speedScale = Math.max(0, CONFIG.LIQUID_SPEED) / 100;
+        if (speedScale <= 0 || state.liquidHeight >= targetHeight) return;
+        const riseRate = state.stainCount * CONFIG.LIQUID_RISE_PER_STAIN_PER_SECOND * speedScale;
+        state.liquidHeight = Math.min(targetHeight, state.liquidHeight + riseRate * dt);
+      }
+
+      function rgba(rgb, alpha) {
+        return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
+      }
+
+      function visibilityOpacity(transparencyPercentage) {
+        return 1 - clamp(transparencyPercentage, 0, 100) / 100;
+      }
+
+      function drawStains() {
+        ctx.save();
+        ctx.drawImage(stainCanvas, 0, 0, state.width, state.height);
+        ctx.restore();
+      }
+
+      function drawLiquid() {
+        if (state.liquidHeight <= 0.1) return;
+        ctx.save();
+        ctx.fillStyle = rgba(CONFIG.STAIN_COLOR, CONFIG.LIQUID_FILL_ALPHA);
+        ctx.fillRect(0, state.height - state.liquidHeight, state.width, state.liquidHeight);
+        ctx.restore();
+      }
+
+      function drawInletPulses() {
+        const categoryOpacity = visibilityOpacity(CONFIG.OTHER_AND_GENERATED_BUBBLES_TRANSPARENCY);
+        if (categoryOpacity <= 0) return;
+        for (const pulse of state.inletPulses) {
+          const p = pulse.life / pulse.maxLife;
+          const palette = colors[pulse.type];
+          ctx.save();
+          ctx.strokeStyle = rgba(palette.core, (1 - p) * 0.55 * categoryOpacity);
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.ellipse(pulse.x, 6 + p * 24, 19 + p * 9, 5 + p * 9, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      function drawBubbleImage(type, x, y, diameter, alpha = 1, renderCtx = ctx) {
+        if (alpha <= 0) return;
+        const image = bubbleImages[type];
+        renderCtx.save();
+        renderCtx.globalAlpha = alpha;
+        if (image.complete && image.naturalWidth) {
+          const aspect = image.naturalWidth / image.naturalHeight;
+          const width = diameter * aspect;
+          renderCtx.drawImage(image, x - width * 0.5, y - diameter * 0.5, width, diameter);
+        } else {
+          const fallback = type === 'gray' ? [96, 96, 96] : colors[type].core;
+          renderCtx.fillStyle = rgba(fallback, 0.72);
+          renderCtx.beginPath();
+          renderCtx.arc(x, y, diameter * 0.5, 0, Math.PI * 2);
+          renderCtx.fill();
+        }
+        renderCtx.restore();
+      }
+
+      function drawCapturedBubble(type, x, y, diameter, alpha = 1, renderCtx = ctx) {
+        if (alpha <= 0) return;
+        const outerRadius = diameter * 0.5;
+        const innerDiameter = diameter * CONFIG.CAPTURED_INNER_BUBBLE_SCALE;
+        const shell = renderCtx.createRadialGradient(
+          x - outerRadius * 0.3,
+          y - outerRadius * 0.34,
+          outerRadius * 0.08,
+          x,
+          y,
+          outerRadius
+        );
+        shell.addColorStop(0, rgba(CONFIG.CAPTURED_OUTER_BUBBLE_LIGHT, 0.96));
+        shell.addColorStop(0.5, rgba(CONFIG.CAPTURED_OUTER_BUBBLE_COLOR, 0.72));
+        shell.addColorStop(1, rgba(CONFIG.CAPTURED_OUTER_BUBBLE_COLOR, 0.38));
+
+        renderCtx.save();
+        renderCtx.globalAlpha = alpha;
+        renderCtx.fillStyle = shell;
+        renderCtx.beginPath();
+        renderCtx.arc(x, y, outerRadius, 0, Math.PI * 2);
+        renderCtx.fill();
+        renderCtx.strokeStyle = rgba(CONFIG.CAPTURED_OUTER_BUBBLE_COLOR, 0.95);
+        renderCtx.lineWidth = CONFIG.CAPTURED_OUTER_BUBBLE_STROKE_WIDTH;
+        renderCtx.stroke();
+
+        renderCtx.globalAlpha = alpha * 0.72;
+        renderCtx.fillStyle = rgba(CONFIG.CAPTURED_OUTER_BUBBLE_LIGHT, 0.9);
+        renderCtx.beginPath();
+        renderCtx.arc(
+          x - outerRadius * 0.28,
+          y - outerRadius * 0.32,
+          Math.max(0.8, outerRadius * 0.12),
+          0,
+          Math.PI * 2
+        );
+        renderCtx.fill();
+        renderCtx.restore();
+        drawBubbleImage(type, x, y, innerDiameter, alpha, renderCtx);
+      }
+
+      function drawBubbles() {
+        const policeOpacity = visibilityOpacity(CONFIG.POLICE_AND_EATEN_BUBBLES_TRANSPARENCY);
+        const otherOpacity = visibilityOpacity(CONFIG.OTHER_AND_GENERATED_BUBBLES_TRANSPARENCY);
+        for (const bubble of state.bubbles) {
+          if (!bubble.alive || bubble.type === 'predator' || bubble.captured) continue;
+          const alpha = bubble.beingEaten ? policeOpacity : otherOpacity;
+          drawBubbleImage(bubble.type, bubble.x, bubble.y, bubble.r * 2, alpha);
+        }
+
+        for (const b of state.bubbles) {
+          if (!b.alive || b.type !== 'predator' || policeOpacity <= 0) continue;
+          drawBubbleImage('predator', b.x, b.y, b.r * 2, policeOpacity);
+          const captive = state.bubbles.find(candidate => candidate.alive && candidate.id === b.carryingId && candidate.captured);
+          if (captive) {
+            const cargoDiameter = captive.r * 2;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r * 0.72, 0, Math.PI * 2);
+            ctx.clip();
+            drawCapturedBubble(captive.type, b.x, b.y, cargoDiameter, policeOpacity);
+            ctx.restore();
+          }
+        }
+      }
+
+      function outcomeTokenVisibilityOpacity(token) {
+        if (token.lane === 'left') return visibilityOpacity(CONFIG.COLLISION_BUBBLES_TRANSPARENCY);
+        if (token.lane === 'right') return visibilityOpacity(CONFIG.POLICE_AND_EATEN_BUBBLES_TRANSPARENCY);
+        return visibilityOpacity(CONFIG.BOTTOM_BUBBLES_TRANSPARENCY);
+      }
+
+      function drawOutcomeTokens() {
+        for (const token of state.outcomeTokens) {
+          const categoryOpacity = outcomeTokenVisibilityOpacity(token);
+          if (categoryOpacity <= 0) continue;
+          const alpha = token.opacity * categoryOpacity;
+          if (token.lane === 'bottom') {
+            drawBubbleImage(token.sourceType, token.x, token.y, token.r * 2, (1 - token.gray) * alpha, outcomeCtx);
+            drawBubbleImage('gray', token.x, token.y, token.r * 2, token.gray * alpha, outcomeCtx);
+          } else if (token.lane === 'right') {
+            drawCapturedBubble(token.sourceType, token.x, token.y, token.r * 2, alpha, outcomeCtx);
+          } else {
+            drawBubbleImage(token.sourceType, token.x, token.y, token.r * 2, alpha, outcomeCtx);
+          }
+        }
+      }
+
+      function drawBursts() {
+        const categoryOpacity = visibilityOpacity(CONFIG.COLLISION_BUBBLES_TRANSPARENCY);
+        if (categoryOpacity <= 0) return;
+        for (const burst of state.bursts) {
+          const progress = burst.life / burst.maxLife;
+          const palette = colors[burst.type];
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, 1 - progress) * categoryOpacity;
+          ctx.strokeStyle = rgba(palette.light, 0.88);
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.arc(burst.x, burst.y, burst.r * (0.72 + progress * 1.2), 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = rgba(palette.light, 0.9);
+          for (const particle of burst.particles) {
+            ctx.beginPath();
+            ctx.arc(particle.x, particle.y, particle.size * (1 - progress * 0.55), 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          ctx.strokeStyle = 'rgba(220, 201, 255, 0.5)';
+          ctx.beginPath();
+          ctx.arc(burst.centerX, burst.centerY, 5 + progress * 22, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, state.width, state.height);
+        outcomeCtx.setTransform(1, 0, 0, 1, 0, 0);
+        outcomeCtx.clearRect(0, 0, outcomeCanvas.width, outcomeCanvas.height);
+        outcomeCtx.setTransform(
+          state.dpr,
+          0,
+          0,
+          state.dpr,
+          CONFIG.OUTCOME_SIDE_GUTTER * state.dpr,
+          0
+        );
+        drawStains();
+        drawLiquid();
+        drawInletPulses();
+        drawBubbles();
+        drawBursts();
+        drawOutcomeTokens();
+      }
+
+      function updateStats(force = false) {
+        if (!force && state.time - state.lastStatsPaint < CONFIG.STATS_REFRESH_SECONDS) return;
+        state.lastStatsPaint = state.time;
+        const outcomeWindowSeconds = CONFIG.OUTCOME_WINDOW_YEARS / CONFIG.SIMULATION_YEARS_PER_SECOND;
+        const outcomeCutoff = state.time - outcomeWindowSeconds;
+        state.events = state.events.filter(e => e.time >= outcomeCutoff - 0.25);
+
+        const outcomes = recentOutcomeCounts();
+        const outcomeTotal = outcomes.floor + outcomes.collision + outcomes.eaten;
+        for (const type of Object.keys(shareEls)) {
+          const percentage = outcomeTotal ? Math.round(outcomes[type] / outcomeTotal * 100) : 0;
+          shareEls[type].textContent = `${percentage}%`;
+        }
+        populationValue.textContent = fmtInt.format(activeColorCount('blue') + activeColorCount('red'));
+      }
+
+      function step(now) {
+        const rawDt = (now - state.lastFrame) / 1000;
+        state.lastFrame = now;
+        const dt = Math.min(0.033, Math.max(0, rawDt));
+
+        state.time += dt;
+        updateOutcomeBalance(dt);
+        spawnFromAccumulator('blue', dt);
+        spawnFromAccumulator('red', dt);
+        syncPredators(dt);
+        updateBubbles(dt);
+        updateOutcomeTokens(dt);
+        updateEffects(dt);
+        updateStains(dt);
+        updateLiquid(dt);
+        updateStats();
+        draw();
+        requestAnimationFrame(step);
+      }
+
+      const observer = new ResizeObserver(() => resizeCanvas());
+      observer.observe(canvas);
+      resizeCanvas();
+      seedPopulation();
+      updateStats(true);
+      requestAnimationFrame(step);
+    })();
+  </script>
+</body>
+</html>

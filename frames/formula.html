@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recruitment, Not Combat — The Mechanics of Cartel Growth</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+  :root{
+    --bg: #EEF0EA;
+    --bg-deep: #E6E9E1;
+    --panel: #FBFBF8;
+    --panel-line: #DCDDD3;
+    --hairline: #D7D9CE;
+    --hairline-soft: #E3E4DA;
+    --ink: #1C1E1A;
+    --ink-dim: #5A5D55;
+    --ink-faint: #93958A;
+    --gold: #B8842E;
+    --gold-deep: #8C6420;
+    --teal: #2E7480;
+    --teal-deep: #1F565F;
+    --brick: #9A3F34;
+    --brick-deep: #712E26;
+    --orange: #C9762F;
+    --slate: #5B6058;
+    --slate-deep: #40453F;
+    --sage: #62795A;
+    --paper-shadow: 0 1px 2px rgba(28,30,26,0.04), 0 6px 20px rgba(28,30,26,0.05);
+    --serif: 'Spectral', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  }
+  *{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+  body{ margin:0; background: var(--bg); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+  ::selection{ background: var(--gold); color: #fff; }
+  a{ color: inherit; }
+  .wrap{ max-width: 1320px; margin: 0 auto; padding: 0 30px; }
+
+  header.hero{
+    padding: 72px 0 44px; border-bottom: 1px solid var(--hairline);
+    background:
+      radial-gradient(ellipse 800px 380px at 12% -15%, rgba(184,132,46,0.10), transparent 60%),
+      radial-gradient(ellipse 650px 380px at 92% 5%, rgba(154,63,52,0.08), transparent 60%);
+  }
+  .eyebrow{ font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 18px; display:flex; align-items:center; gap:10px; }
+  .eyebrow .dot{ width:5px; height:5px; border-radius:50%; background: var(--brick); display:inline-block; }
+  h1.title{ font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.2vw, 48px); line-height: 1.14; margin: 0 0 18px; max-width: 900px; letter-spacing: -0.01em; }
+  h1.title em{ font-style: italic; font-weight: 500; color: var(--gold-deep); }
+  .dek{ font-size: 17px; line-height: 1.6; color: var(--ink-dim); max-width: 680px; margin: 0 0 40px; }
+  .dek b{ color: var(--ink); font-weight: 600; }
+
+  .eq-block{ margin-top: 8px; }
+  .eq-label{ font-family: var(--mono); font-size: 11px; color: var(--ink-faint); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 14px; }
+  .equation{ display:flex; flex-wrap:wrap; align-items:baseline; gap: 4px 2px; font-family: var(--serif); font-size: clamp(22px, 3.2vw, 36px); font-weight: 500; line-height:1.3; user-select:none; }
+  .equation .op{ color: var(--ink-faint); margin: 0 6px; font-weight:400; }
+  .eq-term{ cursor:pointer; padding: 2px 10px; border-radius: 8px; border: 1px solid transparent; transition: background .18s ease, border-color .18s ease, transform .18s ease; }
+  .eq-term:hover{ transform: translateY(-1px); }
+  .eq-term.recruitment{ color: var(--gold-deep); }
+  .eq-term.recruitment:hover{ background: rgba(184,132,46,0.12); border-color: rgba(184,132,46,0.35); }
+  .eq-term.incapacitation{ color: var(--teal-deep); }
+  .eq-term.incapacitation:hover{ background: rgba(46,116,128,0.12); border-color: rgba(46,116,128,0.35); }
+  .eq-term.conflict{ color: var(--brick-deep); }
+  .eq-term.conflict:hover{ background: rgba(154,63,52,0.12); border-color: rgba(154,63,52,0.35); }
+  .eq-term.saturation{ color: var(--slate-deep); }
+  .eq-term.saturation:hover{ background: rgba(91,96,88,0.13); border-color: rgba(91,96,88,0.4); }
+  .eq-legend{ display:flex; flex-wrap:wrap; gap: 22px; margin-top: 20px; }
+  .eq-legend-item{ display:flex; align-items:center; gap:8px; font-size: 13px; color: var(--ink-dim); }
+  .eq-legend-item b{ color: var(--ink); font-weight:600; }
+  .eq-legend-item .sw{ width:9px; height:9px; border-radius: 2px; }
+
+  /* ---------- LABS ---------- */
+  section.labs-section{ padding: 70px 0 40px; border-bottom: 1px solid var(--hairline); }
+  .labs-head{ margin-bottom: 30px; max-width: 760px; }
+  .labs-head h2{ font-family: var(--serif); font-weight:600; font-size: clamp(23px,2.6vw,29px); margin: 0 0 10px; }
+  .labs-head p{ font-size: 15px; line-height:1.6; color: var(--ink-dim); margin:0 0 10px; }
+  .labs-head .window-note{
+    display:inline-flex; align-items:center; gap:7px; font-family: var(--mono); font-size:11.5px; color: var(--ink-dim);
+    background: var(--panel); border:1px solid var(--panel-line); padding:6px 12px; border-radius: 20px;
+  }
+  .labs-head .window-note b{ color: var(--ink); }
+
+  .labs-grid{ display:grid; grid-template-columns: repeat(4, 1fr); gap: 20px; align-items: start; }
+  @media (max-width: 1180px){ .labs-grid{ grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 640px){ .labs-grid{ grid-template-columns: 1fr; } }
+
+  .lab-card{
+    background: var(--panel); border: 1px solid var(--panel-line); border-radius: 16px; padding: 18px;
+    box-shadow: var(--paper-shadow); display:flex; flex-direction:column;
+    transition: box-shadow .4s ease, transform .3s ease; scroll-margin-top: 26px;
+  }
+  .lab-card.flash{ transform: translateY(-2px); box-shadow: 0 2px 4px rgba(28,30,26,0.06), 0 14px 34px rgba(28,30,26,0.12); }
+
+  .lab-kicker{ font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase; display:flex; align-items:center; gap:7px; margin-bottom: 7px;}
+  .lab-kicker .num{ opacity:.5; }
+  .lab-title{ font-family: var(--serif); font-weight:600; font-size: 17px; margin: 0 0 12px; line-height:1.28; }
+
+  .lab-stage{ border-radius: 12px; padding: 4px; min-height: 130px; display:flex; flex-direction:column; justify-content:center; position:relative; overflow:hidden; }
+  .lab-stage svg{ display:block; width:100%; height:auto; }
+
+  .lab-unit-note{ font-family: var(--mono); font-size: 10px; color: var(--ink-faint); text-align:center; margin: 6px 0 2px; }
+  .lab-unit-note b{ color: var(--ink-dim); font-weight:600; }
+  .lab-chart{ margin: 10px 0 2px; }
+  .lab-chart svg{ display:block; width:100%; height:auto; }
+  .lab-cite{ font-family: var(--mono); font-size: 9.5px; color: var(--ink-faint); line-height:1.5; margin: 3px 0 10px; }
+  .lab-cite b{ color: var(--ink-dim); font-weight:600; }
+  .lab-cite .dash-key{ display:inline-block; width:10px; border-top:1.5px dashed var(--ink-faint); margin:0 3px -2px 0; }
+  .lab-cite .solid-key{ display:inline-block; width:10px; border-top:2px solid var(--ink-dim); margin:0 3px -2px 6px; }
+
+  .lab-controls{ margin: 10px 0 10px; }
+  .lab-slider-label{ display:flex; justify-content:space-between; align-items:baseline; font-size:12.5px; font-weight:600; color:var(--ink); margin-bottom:6px; }
+  .lab-slider-label .sval{ font-family: var(--mono); color: var(--ink); font-weight:600; font-size:12.5px; }
+  input[type=range]{ -webkit-appearance:none; width:100%; height: 4px; border-radius: 3px; background: var(--hairline); outline:none; margin: 0; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:15px; height:15px; border-radius:50%; background: var(--accent, var(--gold)); border: 2px solid var(--panel); cursor:pointer; box-shadow: 0 0 0 1px var(--accent, var(--gold)); }
+  input[type=range]::-moz-range-thumb{ width:13px; height:13px; border-radius:50%; background: var(--accent, var(--gold)); border: 2px solid var(--panel); cursor:pointer; box-shadow: 0 0 0 1px var(--accent, var(--gold)); }
+
+  .lab-note{ font-size: 11.5px; line-height:1.5; color: var(--ink-faint); margin-bottom:12px; }
+
+  .lab-foot{ display:flex; align-items:center; justify-content:flex-end; margin-top:auto; }
+  button.mini-btn{ font-family: var(--sans); font-size: 11.5px; font-weight: 600; padding: 7px 12px; border-radius: 7px; border: 1px solid var(--hairline); background: var(--panel); color: var(--ink-dim); cursor:pointer; transition: all .15s ease; }
+  button.mini-btn:hover{ border-color: var(--ink-faint); color: var(--ink); }
+
+  /* ---------- COMBINE ---------- */
+  section.combine{ padding: 70px 0 90px; }
+  .combine-top{ max-width: 760px; margin-bottom: 30px; }
+  .combine-top h2{ font-family: var(--serif); font-weight:600; font-size: clamp(24px,3vw,32px); margin: 0 0 10px; }
+  .combine-top p{ font-size: 15.5px; line-height:1.65; color: var(--ink-dim); margin:0; }
+  .combine-grid{ display:grid; grid-template-columns: 1fr 320px; gap: 26px; }
+  @media (max-width: 980px){ .combine-grid{ grid-template-columns:1fr; } }
+  .network-stage{ background: linear-gradient(180deg, #F3F4EE, #EAECE3); border:1px solid var(--panel-line); border-radius: 18px; padding: 8px; position:relative; box-shadow: var(--paper-shadow); }
+  .network-stage svg{ width:100%; height: 500px; display:block; }
+  .timeline{ display:flex; align-items:center; gap:14px; padding: 14px 18px; border-top:1px solid var(--hairline-soft); }
+  .timeline .yr{ font-family: var(--mono); font-size: 13px; color: var(--ink-dim); min-width: 46px; }
+  .timeline .track{ flex:1; height:4px; background: var(--hairline); border-radius:3px; position:relative; overflow:hidden; }
+  .timeline .fill{ position:absolute; left:0; top:0; bottom:0; width:0%; background: linear-gradient(90deg, var(--gold), var(--brick)); border-radius:3px; }
+  .metric-bar{ display:flex; gap: 0; margin-top: 16px; border:1px solid var(--panel-line); border-radius: 14px; overflow:hidden; box-shadow: var(--paper-shadow); }
+  .metric{ flex:1; padding: 13px 15px; border-right:1px solid var(--hairline-soft); background: var(--panel); }
+  .metric:last-child{ border-right:none; }
+  .metric .mlabel{ font-family:var(--mono); font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; color: var(--ink-faint); margin-bottom:5px;}
+  .metric .mval{ font-family: var(--mono); font-size: 19px; font-weight:600; }
+  .metric.recruits .mval{ color: var(--gold-deep); }
+  .metric.deaths .mval{ color: var(--brick-deep); }
+  .metric.arrests .mval{ color: var(--teal-deep); }
+  .metric.total .mval{ color: var(--ink); }
+  .controls-card{ background: var(--panel); border:1px solid var(--panel-line); border-radius: 14px; padding: 18px; box-shadow: var(--paper-shadow); margin-bottom: 18px; }
+  .controls-card h4{ margin:0 0 4px; font-size:13px; font-weight:600; }
+  .controls-card .slider-row{ margin-bottom: 15px; }
+  .controls-card .slider-row:last-child{ margin-bottom:0; }
+  .controls-card .slab{ display:flex; justify-content:space-between; font-size:12.5px; color:var(--ink-dim); margin-bottom:8px; }
+  .controls-card .slab .sval{ font-family: var(--mono); color: var(--ink); font-weight:600; }
+  .btn-row{ display:flex; gap:8px; flex-wrap:wrap; margin-top: 8px; }
+  button.btn{ font-family: var(--sans); font-size: 12.5px; font-weight: 600; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--panel); color: var(--ink); cursor:pointer; transition: all .15s ease; }
+  button.btn:hover{ border-color: var(--ink-faint); transform: translateY(-1px); }
+  button.btn.primary{ background: var(--gold-deep); color: #fff; border-color: transparent; }
+  button.btn.primary:hover{ filter: brightness(1.08); }
+  .evidence-card{ background: var(--panel); border:1px solid var(--panel-line); border-radius: 14px; padding: 18px; box-shadow: var(--paper-shadow); }
+  .evidence-card h4{ margin:0 0 3px; font-size:13px; font-weight:600; }
+  .evidence-card .esub{ font-size: 11.5px; color: var(--ink-faint); margin-bottom: 14px; line-height:1.5; }
+  .ev-row{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding: 9px 0; border-top: 1px dashed var(--hairline); }
+  .ev-row:first-of-type{ border-top:none; }
+  .ev-lever{ font-size: 12.5px; color: var(--ink-dim); line-height:1.4; }
+  .ev-val{ font-family: var(--mono); font-size: 13.5px; font-weight:700; white-space:nowrap; }
+  .ev-val.up{ color: var(--brick-deep); }
+  .ev-val.down{ color: var(--sage); }
+  .ev-note{ font-size: 11px; color: var(--ink-faint); margin-top: 12px; line-height:1.55; border-top:1px solid var(--hairline-soft); padding-top:10px; }
+
+  footer{ padding: 46px 0 80px; }
+  footer p{ font-size: 12.5px; color: var(--ink-faint); line-height:1.7; max-width: 760px; }
+  footer a{ color: var(--ink-dim); text-decoration: underline; }
+
+  @media (prefers-reduced-motion: reduce){ *{ animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; } }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eq-block">
+      <div class="eq-label">The model — click a term to jump to its card</div>
+      <div class="equation">
+        <span>Ċᵢ&nbsp;=</span>
+        <span class="eq-term recruitment" data-target="lab-recruitment">ρCᵢ</span>
+        <span class="op">−</span>
+        <span class="eq-term incapacitation" data-target="lab-incapacitation">η·Cᵢ⁄C</span>
+        <span class="op">−</span>
+        <span class="eq-term conflict" data-target="lab-conflict">θΣCᵢCⱼSᵢⱼ</span>
+        <span class="op">−</span>
+        <span class="eq-term saturation" data-target="lab-saturation">ωCᵢ²</span>
+      </div>
+      <div class="eq-legend">
+        <div class="eq-legend-item"><span class="sw" style="background:var(--gold-deep)"></span><b>Recruitment</b> (ρCᵢ) — grows the group</div>
+        <div class="eq-legend-item"><span class="sw" style="background:var(--teal-deep)"></span><b>Incapacitation</b> (η·Cᵢ⁄C) — arrests, the state's cut</div>
+        <div class="eq-legend-item"><span class="sw" style="background:var(--brick-deep)"></span><b>Conflict</b> (θΣCᵢCⱼSᵢⱼ) — rivalry, cartel-on-cartel</div>
+        <div class="eq-legend-item"><span class="sw" style="background:var(--slate-deep)"></span><b>Saturation</b> (ωCᵢ²) — internal strain, size vs. structure</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ LABS ============ -->
+<section class="labs-section">
+  <div class="wrap">
+
+    <div class="labs-grid">
+
+      <!-- LAB 1: RECRUITMENT -->
+      <article class="lab-card" id="lab-recruitment" style="--accent:var(--gold-deep)">
+        <div class="lab-kicker" style="color:var(--gold-deep)"><span class="num">01</span> Recruitment</div>
+        <div class="lab-stage" id="stage-recruit" style="background: linear-gradient(180deg, #FBF6EA, #F4ECD8); min-height:190px;"></div>
+        <div class="lab-unit-note">Each bubble ≈ <b>500 people recruited</b></div>
+        <div class="lab-chart" id="chart-recruit"></div>
+        <div class="lab-cite"><span class="solid-key"></span>Table S1 — paper's own <b>estimate</b>, fit to the model, not counted<span class="dash-key"></span>Weekly pace = annual total ÷ 52</div>
+        <div class="lab-note" id="r1-note">At the paper's own estimated pace, this ends at <b>164,400</b> recruits by 2021 — matching Table S1's figures, not a directly measured count.</div>
+        <div class="lab-foot"><button class="mini-btn" id="r1-reset">Start over</button></div>
+      </article>
+
+      <!-- LAB 2: INCAPACITATION -->
+      <article class="lab-card" id="lab-incapacitation" style="--accent:var(--teal-deep)">
+        <div class="lab-kicker" style="color:var(--teal-deep)"><span class="num">02</span> Incapacitation (arrests)</div>
+        <div class="lab-stage" id="stage-incap" style="background: linear-gradient(180deg, #EAF3F4, #DCEBEC); min-height:190px;"></div>
+        <div class="lab-unit-note">Each bubble ≈ <b>500 people arrested</b> · teal falls, green swallows it, stacks</div>
+        <div class="lab-chart" id="chart-incap"></div>
+        <div class="lab-cite"><span class="solid-key"></span>Table S1 — paper's own <b>estimate</b>, not a raw count<span class="dash-key"></span>Simulated: arrests alone, real 175,000 total</div>
+        <div class="lab-note">~110 arrests/wk nationally, barely changed 2012–2021 while cartels grew 115k → 175k. Bigger pool, fewer catches here.</div>
+        <div class="lab-foot"><button class="mini-btn" id="r2-reset">Start over</button></div>
+      </article>
+
+      <!-- LAB 3: CONFLICT -->
+      <article class="lab-card" id="lab-conflict" style="--accent:var(--brick-deep)">
+        <div class="lab-kicker" style="color:var(--brick-deep)"><span class="num">03</span> Conflict (rivalry)</div>
+        <div class="lab-stage" id="stage-conflict" style="background: linear-gradient(180deg, #F7EDE7, #F0DFD4); min-height:190px;"></div>
+        <div class="lab-unit-note">Each bubble ≈ <b>500 combined casualties</b> · red + blue combust, purple stacks</div>
+        <div class="lab-chart" id="chart-conflict"></div>
+        <div class="lab-cite"><span class="solid-key"></span>Table S2 — paper's <b>estimated</b> 2022 sizes<span class="dash-key"></span>Simulated: paper's own conflict formula, Eq. 1</div>
+        <div class="lab-note">Real 2022 sizes. CJNG (red) has 55 state allies, Familia (blue) has 13 — same 13-state rivalry costs Familia ~4× faster.</div>
+        <div class="lab-foot"><button class="mini-btn" id="r3-reset">Start over</button></div>
+      </article>
+
+      <!-- LAB 4: SATURATION -->
+      <article class="lab-card" id="lab-saturation" style="--accent:var(--slate-deep)">
+        <div class="lab-kicker" style="color:var(--slate-deep)"><span class="num">04</span> Saturation (dropouts)</div>
+        <div class="lab-stage" id="stage-saturation" style="background: linear-gradient(180deg, #EEEEEA, #E2E3DC); min-height:190px;"></div>
+        <div class="lab-unit-note">Each bubble ≈ <b>500 people</b> · ~8,550 estimated dropouts, 2012–2022</div>
+        <div class="lab-chart" id="chart-saturation"></div>
+        <div class="lab-cite"><span class="solid-key"></span>Fig. 3A — real reported percentages, main text<span class="dash-key"></span>3% residual computed from those percentages</div>
+        <div class="lab-note">"Saturation" = internal instability + <b>dropouts</b> + diminishing returns — one of three named causes, not the sole one; isolated here as a worked example. Fig. 3A: of 285,000 people who were ever cartel members (2012–2022), 60% stayed active, 17% died, 20% were incapacitated — only 97%. The other 3% (~8,550) fits neither category: the best estimate for dropouts the paper's own numbers support.</div>
+        <div class="lab-foot"><button class="mini-btn" id="r4-reset">Replay</button></div>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<script id="cartel-data" type="application/json">{"cartels": [{"name": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "size": 28764, "short": "CJNG", "rivals": 77, "allies": 55}, {"name": "C\u00e1rtel de Sinaloa", "size": 17825, "short": "Sinaloa", "rivals": 19, "allies": 34}, {"name": "La Nueva Familia Michoacana", "size": 10736, "short": "Familia Michoacana", "rivals": 21, "allies": 13}, {"name": "C\u00e1rtel del Noreste", "size": 8992, "short": "Noreste", "rivals": 16, "allies": 10}, {"name": "La Uni\u00f3n Tepito", "size": 7561, "short": "Uni\u00f3n Tepito", "rivals": 13, "allies": 9}, {"name": "Los Chapitos", "size": 6823, "short": "Chapitos", "rivals": 9, "allies": 10}, {"name": "C\u00e1rtel del Golfo", "size": 5556, "short": "Golfo", "rivals": 10, "allies": 7}, {"name": "Los Zetas", "size": 4697, "short": "Zetas", "rivals": 10, "allies": 6}, {"name": "Guerreros Unidos", "size": 3096, "short": "Guerreros Unidos", "rivals": 13, "allies": 2}, {"name": "Gente Nueva", "size": 4325, "short": "Gente Nueva", "rivals": 4, "allies": 9}, {"name": "Zetas Vieja Escuela", "size": 3084, "short": "Zetas V.E.", "rivals": 9, "allies": 4}, {"name": "Caballeros Templarios", "size": 2686, "short": "Caballeros Templ.", "rivals": 8, "allies": 4}, {"name": "Fuerza Anti-Uni\u00f3n Tepito", "size": 2903, "short": "Anti-Uni\u00f3n Tepito", "rivals": 7, "allies": 5}, {"name": "Los Rojos", "size": 813, "short": "Rojos", "rivals": 12, "allies": 0}, {"name": "C\u00e1rteles Unidos", "size": 2051, "short": "C\u00e1rteles Unidos", "rivals": 6, "allies": 4}, {"name": "Los Mayas", "size": 1824, "short": "Mayas", "rivals": 7, "allies": 3}, {"name": "C\u00e1rtel de Tl\u00e1huac", "size": 2050, "short": "Tl\u00e1huac", "rivals": 5, "allies": 4}, {"name": "C\u00e1rtel de Caborca", "size": 2114, "short": "Caborca", "rivals": 4, "allies": 4}, {"name": "Los Cabrera", "size": 2016, "short": "Cabrera", "rivals": 3, "allies": 4}, {"name": "Los Cuinis", "size": 2061, "short": "Cuinis", "rivals": 0, "allies": 6}], "rivals": [{"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "La Nueva Familia Michoacana", "w": 13}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "C\u00e1rtel de Sinaloa", "w": 7}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "C\u00e1rtel del Noreste", "w": 6}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "C\u00e1rteles Unidos", "w": 6}, {"a": "Fuerza Anti-Uni\u00f3n Tepito", "b": "La Uni\u00f3n Tepito", "w": 5}, {"a": "Caballeros Templarios", "b": "Guerreros Unidos", "w": 4}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "Los Mayas", "w": 4}, {"a": "C\u00e1rtel de Caborca", "b": "Los Chapitos", "w": 3}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "C\u00e1rtel de Tl\u00e1huac", "w": 3}, {"a": "C\u00e1rtel del Golfo", "b": "C\u00e1rtel del Noreste", "w": 3}, {"a": "Caballeros Templarios", "b": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "w": 3}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "La Uni\u00f3n Tepito", "w": 3}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "Zetas Vieja Escuela", "w": 3}, {"a": "Guerreros Unidos", "b": "La Nueva Familia Michoacana", "w": 3}, {"a": "Guerreros Unidos", "b": "Los Rojos", "w": 3}, {"a": "Los Mayas", "b": "Los Rojos", "w": 3}, {"a": "C\u00e1rtel de Sinaloa", "b": "La Nueva Familia Michoacana", "w": 2}, {"a": "C\u00e1rtel del Noreste", "b": "Los Zetas", "w": 2}, {"a": "C\u00e1rtel del Noreste", "b": "Zetas Vieja Escuela", "w": 2}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "Los Zetas", "w": 2}, {"a": "Fuerza Anti-Uni\u00f3n Tepito", "b": "La Nueva Familia Michoacana", "w": 2}, {"a": "C\u00e1rtel de Caborca", "b": "C\u00e1rtel de Sinaloa", "w": 1}, {"a": "C\u00e1rtel de Sinaloa", "b": "Los Chapitos", "w": 1}, {"a": "C\u00e1rtel de Tl\u00e1huac", "b": "La Uni\u00f3n Tepito", "w": 1}, {"a": "C\u00e1rtel del Golfo", "b": "Los Zetas", "w": 1}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "C\u00e1rtel del Golfo", "w": 1}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "Guerreros Unidos", "w": 1}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "Los Rojos", "w": 1}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "Los Cabrera", "w": 1}, {"a": "C\u00e1rtel del Golfo", "b": "Zetas Vieja Escuela", "w": 1}], "alliances": [{"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "Los Cuinis", "w": 6}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "Fuerza Anti-Uni\u00f3n Tepito", "w": 5}, {"a": "Caballeros Templarios", "b": "La Nueva Familia Michoacana", "w": 4}, {"a": "C\u00e1rtel de Sinaloa", "b": "Los Cabrera", "w": 4}, {"a": "C\u00e1rtel del Noreste", "b": "Los Zetas", "w": 4}, {"a": "C\u00e1rtel de Sinaloa", "b": "Gente Nueva", "w": 3}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "C\u00e1rtel de Tl\u00e1huac", "w": 3}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "La Uni\u00f3n Tepito", "w": 3}, {"a": "La Nueva Familia Michoacana", "b": "Los Mayas", "w": 3}, {"a": "C\u00e1rtel Jalisco Nueva Generaci\u00f3n (CJNG)", "b": "Guerreros Unidos", "w": 2}, {"a": "C\u00e1rtel de Sinaloa", "b": "Los Chapitos", "w": 2}, {"a": "Gente Nueva", "b": "Los Chapitos", "w": 1}]}
+</script>
+<script>
+(function(){
+"use strict";
+const DATA = JSON.parse(document.getElementById('cartel-data').textContent);
+const fmt = d3.format(",.0f");
+const fmt1 = d3.format(",.1f");
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+const TOTAL_WEEKS = 520;      // exactly the paper's own 2012–2021 analysis span
+const WEEKS_PER_SEC = 4;      // ~130s to play through the full 10-year window
+
+// Supplementary Table S1 — exact reported values (thousands), Prieto-Curiel et al. 2023
+const TABLE_S1 = {
+  years:      [2012,2013,2014,2015,2016,2017,2018,2019,2020,2021],
+  recruited:  [13.9,14.4,15.0,15.5,16.1,16.6,17.3,17.9,18.5,19.2],   // thousands/year
+  casualties: [3.6, 3.8, 4.1, 4.3, 4.6, 4.9, 5.2, 5.5, 5.9, 6.3],
+  incap:      [5.7, 5.7, 5.7, 5.7, 5.7, 5.7, 5.7, 5.7, 5.7, 5.7],
+  // population trajectory: initial(2012) then final-of-year for 2012..2021 => 11 points, 2012–2022
+  population: { years:[2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022],
+                values:[115.4,120.0,124.9,130.0,135.5,141.2,147.3,153.6,160.2,167.1,175.0] }
+};
+
+/* =========================================================
+   Nav: clicking an equation term scrolls to its card and flashes it
+========================================================= */
+document.querySelectorAll('.eq-term').forEach(el=>{
+  el.addEventListener('click', ()=>{
+    const t = document.getElementById(el.dataset.target);
+    if(!t) return;
+    t.scrollIntoView({behavior:'smooth', block:'center'});
+    t.classList.add('flash');
+    setTimeout(()=>t.classList.remove('flash'), 900);
+  });
+});
+
+/* =========================================================
+   GLASS BUBBLE PALETTE — shared radial-gradient defs
+========================================================= */
+const GLASS_COLORS = { gold:'#B8842E', teal:'#2E7480', brick:'#B33A3A', orange:'#C9762F', slate:'#5B6058', green:'#3E7D4F', combust:'#764C76', blue:'#3A5FB3' };
+function installGlassDefs(svg){
+  const defs = svg.append('defs');
+  Object.entries(GLASS_COLORS).forEach(([key,color])=>{
+    const g = defs.append('radialGradient').attr('id', 'glass-'+key).attr('cx','32%').attr('cy','26%').attr('r','78%');
+    g.append('stop').attr('offset','0%').attr('stop-color','#ffffff').attr('stop-opacity',0.95);
+    g.append('stop').attr('offset','18%').attr('stop-color','#ffffff').attr('stop-opacity',0.45);
+    g.append('stop').attr('offset','48%').attr('stop-color',color).attr('stop-opacity',0.24);
+    g.append('stop').attr('offset','100%').attr('stop-color',color).attr('stop-opacity',0.12);
+  });
+}
+
+/* =========================================================
+   Shared bubble-field engine — glassy look, soap-bubble pop
+========================================================= */
+function BubbleField(containerId, opts){
+  const o = Object.assign({ width:280, height:130, dotRadius:4.6, maxDots:90, wallPad:6, gap:1.1,
+    autoShrink:false, fillFraction:0.5, rMin:1.3, rMax:5.5, entryFrom:'top', packLeft:null, packRight:null,
+    colorRegions:null, colorEntry:null, colorMaxDots:null }, opts);
+  const el = document.getElementById(containerId);
+  const svg = d3.select(el).append('svg').attr('viewBox', `0 0 ${o.width} ${o.height}`).attr('preserveAspectRatio','xMidYMid meet');
+  installGlassDefs(svg);
+  const burstLayer = svg.append('g');
+  const dotLayer = svg.append('g');
+  let nodes = []; let idc = 0;
+  const baseR = opts.dotRadius || o.rMax;
+
+  function autoRadiusFor(n){
+    const innerArea = (o.width-2*o.wallPad)*(o.height-2*o.wallPad);
+    const r = Math.sqrt(o.fillFraction*innerArea/(Math.max(1,n)*Math.PI));
+    return Math.max(o.rMin, Math.min(o.rMax, r));
+  }
+
+  // Deterministic packed grid: every bubble gets its own non-overlapping slot,
+  // so two bubbles can never visually collide, regardless of animation timing.
+  // left/right let a single field host multiple independent regions (e.g.
+  // one color packing in from the right, another stacking on the left).
+  function computeSlots(r, left, right){
+    const spacing = 2*r + o.gap;
+    left = (left!=null ? left : (o.packLeft!=null ? o.packLeft : o.wallPad)) + r;
+    right = (right!=null ? right : (o.packRight!=null ? o.packRight : o.width-o.wallPad)) - r;
+    const innerW = Math.max(spacing, right-left);
+    const cols = Math.max(1, Math.floor(innerW/spacing));
+    const maxRows = Math.max(1, Math.ceil(o.maxDots/Math.max(1,cols-1))+2);
+    const slots = [];
+    for(let row=0; row<maxRows; row++){
+      const y = o.height - o.wallPad - r - row*spacing;
+      if(y < o.wallPad+r) break;
+      const offset = (row%2===1) ? spacing/2 : 0;
+      const rowCols = offset>0 ? Math.max(0,cols-1) : cols;
+      for(let c=0;c<rowCols;c++){
+        const x = left + offset + c*spacing;
+        if(x > right+0.01) break;
+        slots.push({x,y});
+      }
+      if(slots.length >= o.maxDots) break;
+    }
+    return slots;
+  }
+
+  function reflow(){
+    const live = nodes.filter(d=>!d.popping);
+    if(o.colorRegions){
+      const groups = {};
+      live.forEach(nd=>{ (groups[nd.colorKey] = groups[nd.colorKey]||[]).push(nd); });
+      Object.keys(groups).forEach(colorKey=>{
+        const region = o.colorRegions[colorKey];
+        const slots = region ? computeSlots(o.dotRadius, region.left, region.right) : computeSlots(o.dotRadius);
+        groups[colorKey].forEach((nd,i)=>{
+          const slot = slots[Math.min(i, slots.length-1)];
+          if(slot){ nd.targetX = slot.x; nd.targetY = slot.y; }
+        });
+      });
+    } else {
+      const slots = computeSlots(o.dotRadius);
+      live.forEach((nd,i)=>{
+        const slot = slots[Math.min(i, slots.length-1)];
+        if(slot){ nd.targetX = slot.x; nd.targetY = slot.y; }
+      });
+    }
+  }
+
+  function spawn(colorKey, opts2){
+    opts2 = opts2 || {};
+    const liveCount = nodes.filter(d=>!d.popping).length;
+    const colorCap = o.colorMaxDots && o.colorMaxDots[colorKey];
+    if(liveCount >= o.maxDots) return null;
+    if(colorCap!=null){
+      const colorLive = nodes.filter(d=>!d.popping && d.colorKey===colorKey).length;
+      if(colorLive >= colorCap) return null;
+    }
+    if(o.autoShrink){
+      o.dotRadius = autoRadiusFor(liveCount+1);
+      nodes.forEach(nd=>{ if(!nd.popping) nd.targetR = o.dotRadius; });
+    }
+    const r = o.dotRadius;
+    const node = { id: idc++, r, targetR:r, colorKey, x:0, y:0, targetX:0, targetY:0, phase: rnd(0,Math.PI*2), popping:false,
+      innerColorKey: opts2.innerColorKey || null };
+    nodes.push(node);
+    reflow();
+    if(opts2.startX!=null){
+      node.x = opts2.startX; node.y = opts2.startY!=null ? opts2.startY : node.targetY;
+    } else {
+      const entry = (o.colorEntry && o.colorEntry[colorKey]) || o.entryFrom;
+      if(entry==='right'){ node.x = o.width+r+rnd(0,8); node.y = node.targetY; }
+      else if(entry==='left'){ node.x = -r-rnd(0,8); node.y = node.targetY; }
+      else { node.x = node.targetX; node.y = -r-rnd(0,8); } // default: drop in from the top
+    }
+    return node;
+  }
+
+  function popNode(n){
+    if(!n||n.popping) return;
+    n.popping=true; n.popStart=performance.now();
+    burst(n.x,n.y,n.r,GLASS_COLORS[n.colorKey]);
+    reflow(); // remaining bubbles smoothly close the gap
+  }
+
+  function captureNode(n, tx, ty, duration){
+    // eases a bubble toward (tx,ty) while shrinking to nothing — for a
+    // "swallowed by something" effect, instead of bursting in place.
+    if(!n||n.popping) return;
+    n.popping=true; n.popStart=performance.now(); n.captureDuration = duration||500;
+    n.captureFromX=n.x; n.captureFromY=n.y; n.captureTX=tx; n.captureTY=ty; n.captureFromR=n.r;
+    reflow();
+  }
+
+  function exitNode(n, gateX, gateY, exitX, exitY, duration){
+    // eases a bubble toward a gate point then continues past it and fades —
+    // for "walking out" rather than bursting or being swallowed.
+    if(!n||n.popping) return;
+    n.popping=true; n.popStart=performance.now(); n.exitDuration = duration||700;
+    n.exitFromX=n.x; n.exitFromY=n.y; n.exitGateX=gateX; n.exitGateY=gateY; n.exitToX=exitX; n.exitToY=exitY;
+    reflow();
+  }
+
+  function burst(x,y,r,color){
+    burstLayer.append('circle').attr('cx',x).attr('cy',y).attr('r',r).attr('fill','none').attr('stroke',color).attr('stroke-width',1.3).attr('stroke-opacity',0.85)
+      .transition().duration(240).ease(d3.easeCubicOut).attr('r',r*2.1).attr('stroke-opacity',0).remove();
+    for(let i=0;i<5;i++){
+      const ang=(i/5)*Math.PI*2+rnd(-0.3,0.3), dist=rnd(8,15);
+      burstLayer.append('circle').attr('cx',x).attr('cy',y).attr('r',rnd(0.8,1.4)).attr('fill',color).attr('opacity',0.8)
+        .transition().duration(rnd(220,300)).ease(d3.easeCubicOut).attr('cx',x+Math.cos(ang)*dist).attr('cy',y+Math.sin(ang)*dist+2).attr('r',0).attr('opacity',0).remove();
+    }
+  }
+
+  function tick(dt){
+    const now0=performance.now();
+    for(let i=0;i<nodes.length;i++){
+      const a = nodes[i];
+      if(a.popping){
+        if(a.captureTX!=null){
+          const t = Math.min(1, (now0-a.popStart)/a.captureDuration);
+          const ease = 1-Math.pow(1-t,2);
+          a.x = a.captureFromX + (a.captureTX-a.captureFromX)*ease;
+          a.y = a.captureFromY + (a.captureTY-a.captureFromY)*ease;
+          a.r = a.captureFromR*(1-ease);
+        } else if(a.exitGateX!=null){
+          const t = Math.min(1, (now0-a.popStart)/a.exitDuration);
+          if(t<0.5){
+            const e = t/0.5;
+            a.x = a.exitFromX + (a.exitGateX-a.exitFromX)*e;
+            a.y = a.exitFromY + (a.exitGateY-a.exitFromY)*e;
+          } else {
+            const e = (t-0.5)/0.5;
+            a.x = a.exitGateX + (a.exitToX-a.exitGateX)*e;
+            a.y = a.exitGateY + (a.exitToY-a.exitGateY)*e;
+          }
+        }
+        continue;
+      }
+      if(a.targetR!=null && Math.abs(a.r-a.targetR)>0.01) a.r += (a.targetR-a.r)*0.14;
+      a.x += (a.targetX-a.x)*0.18;
+      a.y += (a.targetY-a.y)*0.18;
+    }
+    const now=performance.now();
+    nodes = nodes.filter(d=> !(d.popping && now-d.popStart > (d.exitDuration||d.captureDuration||230)));
+  }
+
+  function render(){
+    const now=performance.now();
+    const sel = dotLayer.selectAll('circle.bub').data(nodes, d=>d.id);
+    sel.exit().remove();
+    const enter = sel.enter().append('circle').attr('class','bub').attr('r',0).attr('cx',d=>d.x).attr('cy',d=>d.y)
+      .attr('fill', d=>`url(#glass-${d.colorKey})`).attr('stroke', d=>GLASS_COLORS[d.colorKey]).attr('stroke-width', o.autoShrink?0.6:1).attr('stroke-opacity',0.55);
+    enter.transition().duration(150).attr('r', d=>d.r);
+    sel.merge(enter).attr('cx',d=>d.x).attr('cy',d=>d.y)
+      .attr('r', d=>{
+        if(d.popping){
+          if(d.captureTX!=null) return Math.max(0, d.r);
+          if(d.exitGateX!=null) return d.r;
+          return Math.max(0, d.r*(1-(now-d.popStart)/230));
+        }
+        const wob=1+0.03*Math.sin(now/420+d.phase); return d.r*wob;
+      })
+      .attr('stroke-opacity', d=> {
+        if(!d.popping) return 0.55;
+        if(d.captureTX!=null) return 0.55;
+        if(d.exitGateX!=null){
+          const t = (now-d.popStart)/d.exitDuration;
+          return t>0.5 ? Math.max(0, 0.55*(1-(t-0.5)/0.5)) : 0.55;
+        }
+        return Math.max(0,0.55*(1-(now-d.popStart)/230));
+      })
+      .attr('fill-opacity', d=>{
+        if(d.popping && d.exitGateX!=null){
+          const t = (now-d.popStart)/d.exitDuration;
+          return t>0.5 ? Math.max(0, 1-(t-0.5)/0.5) : 1;
+        }
+        return 1;
+      });
+
+    // nested inner circle, for bubbles that "contain" a smaller one (e.g. an arrested member inside the police bubble)
+    const withInner = nodes.filter(d=>d.innerColorKey && !d.popping);
+    const innerSel = dotLayer.selectAll('circle.bub-inner').data(withInner, d=>d.id);
+    innerSel.exit().remove();
+    const innerEnter = innerSel.enter().append('circle').attr('class','bub-inner')
+      .attr('fill', d=>GLASS_COLORS[d.innerColorKey]).attr('fill-opacity',0.75)
+      .attr('stroke', d=>GLASS_COLORS[d.innerColorKey]).attr('stroke-width',0.6).attr('stroke-opacity',0.6);
+    innerSel.merge(innerEnter).attr('cx',d=>d.x).attr('cy',d=>d.y).attr('r', d=>Math.max(0, d.r*0.42));
+  }
+  function clear(){ nodes=[]; o.dotRadius = baseR; }
+  return { get nodes(){return nodes;}, get count(){return nodes.filter(d=>!d.popping).length;}, spawn, popNode, captureNode, exitNode, tick, render, clear, svg, opts:o };
+}
+function rnd(a,b){ return a+Math.random()*(b-a); }
+
+/* =========================================================
+   LineChart — small reusable time-series chart.
+   x axis is always "years" 0..10 (520 weeks), fixed and bounded.
+========================================================= */
+function LineChart(containerId, opts){
+  const o = Object.assign({
+    width: 280, height: 100, margin:{top:8,right:8,bottom:16,left:6},
+    xDomain: [2012, 2022],
+    series: [{key:'a', color:'#B8842E', dash:false, points:false}],
+    yFormat: d3.format(',.0f')
+  }, opts);
+
+  const el = document.getElementById(containerId);
+  const svg = d3.select(el).append('svg')
+    .attr('viewBox', `0 0 ${o.width} ${o.height}`)
+    .attr('preserveAspectRatio','xMidYMid meet');
+
+  const innerW = o.width - o.margin.left - o.margin.right;
+  const innerH = o.height - o.margin.top - o.margin.bottom;
+  const g = svg.append('g').attr('transform', `translate(${o.margin.left},${o.margin.top})`);
+
+  const gridG = g.append('g');
+  const lineG = g.append('g');
+  const dotG = g.append('g');
+  const axisG = svg.append('g');
+
+  const x = d3.scaleLinear().domain(o.xDomain).range([0, innerW]);
+  let y = d3.scaleLinear().domain([0,1]).range([innerH, 0]);
+
+  const data = {};
+  o.series.forEach(s=> data[s.key] = []);
+
+  function niceMax(){
+    let m = 1;
+    o.series.forEach(s=>{ const arr=data[s.key]; if(arr.length) m = Math.max(m, d3.max(arr, d=>d.v)); });
+    return m*1.18;
+  }
+
+  function render(){
+    y.domain([0, niceMax()]).range([innerH,0]);
+
+    const ticks = y.ticks(3);
+    gridG.selectAll('line').data(ticks).join('line')
+      .attr('x1',0).attr('x2',innerW).attr('y1',d=>y(d)).attr('y2',d=>y(d))
+      .attr('stroke','#D7D9CE').attr('stroke-width',1);
+    gridG.selectAll('text.gy').data(ticks).join('text').attr('class','gy')
+      .attr('x',0).attr('y',d=>y(d)-3)
+      .attr('font-family','var(--mono)').attr('font-size',8.5).attr('fill','#93958A')
+      .text(d=>o.yFormat(d));
+
+    axisG.selectAll('text.gx').data(o.xDomain).join('text').attr('class','gx')
+      .attr('x', d=> o.margin.left + x(d)).attr('y', o.height-4)
+      .attr('text-anchor', (d,i)=> i===0?'start':'end')
+      .attr('font-family','var(--mono)').attr('font-size',8.5).attr('fill','#93958A')
+      .text(d=> o.yearLabels ? o.yearLabels(d) : Math.round(d));
+
+    const lineGen = d3.line().x(d=>x(d.w)).y(d=>y(d.v)).curve(d3.curveMonotoneX);
+
+    o.series.forEach(s=>{
+      const arr = data[s.key];
+      let lpath = lineG.select('path.line-'+s.key);
+      if(lpath.empty()){
+        lpath = lineG.append('path').attr('class','line-'+s.key).attr('fill','none')
+          .attr('stroke', s.color).attr('stroke-width', s.points?1.6:2);
+        if(s.dash) lpath.attr('stroke-dasharray','3,2.5');
+      }
+      lpath.attr('d', lineGen(arr));
+
+      if(s.points){
+        dotG.selectAll('circle.pt-'+s.key).data(arr).join('circle').attr('class','pt-'+s.key)
+          .attr('r',2.1).attr('fill', s.color).attr('cx',d=>x(d.w)).attr('cy',d=>y(d.v));
+      } else if(arr.length){
+        const last = arr[arr.length-1];
+        let dot = dotG.select('circle.dot-'+s.key);
+        if(dot.empty()) dot = dotG.append('circle').attr('class','dot-'+s.key).attr('r',3).attr('fill', s.color).attr('stroke','#FBFBF8').attr('stroke-width',1.3);
+        dot.attr('cx', x(last.w)).attr('cy', y(last.v));
+      }
+    });
+  }
+
+  function push(key, xVal, value){ data[key].push({w:xVal, v:value}); }
+  function setStatic(key, points){ data[key] = points.map(p=>({w:p.x, v:p.v})); }
+  function reset(keepKeys){
+    o.series.forEach(s=>{ if(!keepKeys || !keepKeys.includes(s.key)) data[s.key] = []; });
+  }
+
+  render();
+  return { push, setStatic, render, reset, data };
+}
+
+function runLoop(fn){
+  let last = performance.now();
+  function frame(now){
+    const dt = Math.min(64, now-last); last = now;
+    fn(dt, now);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+}
+
+/* =========================================================
+   LAB 1 — RECRUITING
+   Bubbles = cumulative recruits, real weekly pace derived directly
+   from Table S1's annual "Recruited" column (13.9k...19.2k/yr).
+   At the default 1.00x slider, this reproduces the exact reported
+   total: 164,400 recruits by end of 2021.
+   Solid dots = real cumulative total at each real year (Table S1).
+   Dashed line = your chosen pace, as a multiple of the real one.
+========================================================= */
+(function recruitmentDemo(){
+  const UNIT = 500; // 1 bubble = 500 people recruited
+  const field = BubbleField('stage-recruit', {
+    width:280, height:190, dotRadius:5.0, maxDots:350
+  });
+  const chart = LineChart('chart-recruit', {
+    xDomain:[2012,2022],
+    yFormat: d3.format(',.0f'),
+    series:[
+      {key:'reported', color:'#8C6420', points:true},
+      {key:'sim', color:'#B8842E', dash:true}
+    ]
+  });
+
+  // real cumulative recruits (thousands) at each real year, straight from Table S1
+  const cumReal = [];
+  TABLE_S1.recruited.reduce((acc,v,i)=>{ const s=acc+v; cumReal.push(s); return s; }, 0);
+  chart.setStatic('reported', TABLE_S1.years.map((yr,i)=>({x:yr+1, v:cumReal[i]}))); // point lands at year-end
+
+  const pace = 1; // fixed at the real historical pace (no slider, for now)
+  let week = 0, cumPeople = 0, spawnAccum=0, finished=false, pauseTimer=null;
+
+  function recruitsThisWeek(wk){
+    // which real year are we in? (0-indexed into TABLE_S1.recruited)
+    const yi = Math.min(TABLE_S1.recruited.length-1, Math.floor(wk/52));
+    const annualReal = TABLE_S1.recruited[yi]*1000; // people/year, real
+    return (annualReal/52) * pace;
+  }
+
+  function seed(){
+    field.clear(); chart.reset(['reported']); week = 0; cumPeople = 0; spawnAccum=0; finished=false;
+    if(pauseTimer) clearTimeout(pauseTimer);
+    chart.push('sim', 2012, 0);
+    chart.render();
+  }
+
+  document.getElementById('r1-reset').addEventListener('click', seed);
+  seed();
+
+  runLoop((dt)=>{
+    if(!finished){
+      const dtWeeks = (dt/1000)*WEEKS_PER_SEC;
+      const wk0 = week, wk1 = Math.min(TOTAL_WEEKS, week+dtWeeks);
+      const rate = recruitsThisWeek(wk0); // people/week at current point
+      const added = rate*dtWeeks;
+      cumPeople += added;
+      spawnAccum += added;
+      while(spawnAccum >= UNIT){ spawnAccum -= UNIT; field.spawn('gold'); }
+      week = wk1;
+      chart.push('sim', 2012 + week/52, cumPeople/1000); // chart in thousands, matches reported points
+      chart.render();
+      if(week >= TOTAL_WEEKS){ finished = true; }
+    }
+    field.tick(dt); field.render();
+  });
+})();
+
+/* =========================================================
+   LAB 2 — INCAPACITATION
+   Starts completely empty. For every real arrest threshold crossed
+   (1 bubble = 700 people, ~45 times over the run): a teal bubble
+   drops from top-center, a green police bubble enters from the
+   left-center to meet it, swallows it (nests it visibly inside),
+   and the merged bubble falls to stack from the bottom-left —
+   same bottom-up packing as the recruiting card, just starting
+   from empty instead of a pre-filled population.
+   Chart: solid = real population, Table S1. Dashed = simulated,
+   arrests alone at the real η=110/wk against the real 175,000 total.
+========================================================= */
+(function incapDemo(){
+  const UNIT = 500; // 1 bubble = 500 people (shared unit across all four cards)
+  const W=280, H=190;
+  const cx=W/2, cy=H/2;
+  const field = BubbleField('stage-incap', {
+    width:W, height:H, dotRadius:5.0, maxDots:60, wallPad:6
+  });
+
+  let pending = 0, animating = false;
+
+  function playCapture(){
+    if(pending<=0){ animating=false; return; }
+    animating = true; pending--;
+
+    const chor = field.svg.append('g');
+    const r = field.opts.dotRadius;
+    const tealTemp = chor.append('circle')
+      .attr('cx', cx).attr('cy', -r-6).attr('r', r)
+      .attr('fill', 'url(#glass-teal)').attr('stroke', GLASS_COLORS.teal).attr('stroke-width',1).attr('stroke-opacity',0.6);
+
+    tealTemp.transition().duration(420).ease(d3.easeQuadIn).attr('cy', cy).on('end', ()=>{
+      const greenTemp = chor.append('circle')
+        .attr('cx', -r-6).attr('cy', cy).attr('r', r*1.3)
+        .attr('fill', 'url(#glass-green)').attr('stroke', GLASS_COLORS.green).attr('stroke-width',1.2).attr('stroke-opacity',0.8);
+      greenTemp.transition().duration(340).ease(d3.easeQuadOut).attr('cx', cx).on('end', ()=>{
+        chor.append('circle').attr('cx',cx).attr('cy',cy).attr('r', r*1.3)
+          .attr('fill','none').attr('stroke', GLASS_COLORS.green).attr('stroke-width',1.4).attr('stroke-opacity',0.85)
+          .transition().duration(220).attr('r', r*2.3).attr('stroke-opacity',0).remove();
+        chor.remove();
+        field.spawn('green', {startX:cx, startY:cy, innerColorKey:'teal'});
+        setTimeout(playCapture, 40);
+      });
+    });
+  }
+
+  const chart = LineChart('chart-incap', {
+    xDomain:[2012,2022],
+    series:[
+      {key:'reported', color:'#1F565F', points:true},
+      {key:'sim', color:'#2E7480', dash:true}
+    ]
+  });
+  chart.setStatic('reported', TABLE_S1.population.years.map((yr,i)=>({x:yr, v:TABLE_S1.population.values[i]})));
+
+  const ETA = 110;
+  const Ctot = 175000; // real 2022 national estimate (fixed, no slider for now)
+  const START = TABLE_S1.population.values[0]; // 115.4 (thousands) — real 2012 figure
+  let trueCount = START, week = 0, finished=false;
+
+  const TOTAL_ARRESTS = 32184; // real total over the decade, from η/Ctot against the real 115,400 start
+
+  function seed(){
+    field.clear(); chart.reset(['reported']); trueCount = START; week = 0; finished=false;
+    animating = false;
+    chart.push('sim', 2012, trueCount);
+    chart.render();
+    // queue every real capture up front — the choreography then plays them
+    // back-to-back at its own pace, same rhythm every time, instead of
+    // spreading ~64 events thin across the full 130s window.
+    pending = Math.round(TOTAL_ARRESTS/UNIT);
+    if(pending>0) playCapture();
+  }
+
+  document.getElementById('r2-reset').addEventListener('click', seed);
+  seed();
+
+  runLoop((dt)=>{
+    if(!finished){
+      const dtWeeks = (dt/1000)*WEEKS_PER_SEC;
+      const rate = ETA/Ctot;
+      trueCount = Math.max(0, trueCount - rate*trueCount*dtWeeks);
+      week = Math.min(TOTAL_WEEKS, week + dtWeeks);
+      chart.push('sim', 2012 + week/52, trueCount);
+      chart.render();
+      if(week >= TOTAL_WEEKS){ finished = true; }
+    }
+    field.tick(dt); field.render();
+  });
+})();
+
+/* =========================================================
+   LAB 3 — CONFLICT
+   Starts empty. A brick (CJNG) bubble enters from the left, an
+   orange (Familia Michoacana) bubble enters from the right — they
+   meet at center and combust (a two-color burst, the residue of
+   the clash). Out of that, one blended-color bubble coalesces and
+   falls to stack from the bottom — 1 bubble = 300 combined
+   casualties, ~44 times over the run, using the paper's own
+   conflict formula (Supplementary Eq. 1) and the real 2022 sizes
+   and allies from Table S2.
+   Chart: points = real 2022 sizes. Dashed = simulated forward —
+   the paper doesn't report a specific future trajectory for this pair.
+========================================================= */
+(function conflictDemo(){
+  const CASUALTY_UNIT = 500; // 1 bubble = 500 combined casualties (shared unit across all four cards)
+  const W=280, H=190;
+  const cx=W/2, cy=H/2;
+  const field = BubbleField('stage-conflict', {
+    width:W, height:H, dotRadius:5.0, maxDots:60, wallPad:6
+  });
+
+  let pending = 0, animating = false;
+
+  function burstDual(x,y,r,colorA,colorB){
+    const layer = field.svg.append('g');
+    layer.append('circle').attr('cx',x).attr('cy',y).attr('r',r).attr('fill','none').attr('stroke',colorA).attr('stroke-width',1.3).attr('stroke-opacity',0.85)
+      .transition().duration(240).ease(d3.easeCubicOut).attr('r',r*2.1).attr('stroke-opacity',0).remove();
+    layer.append('circle').attr('cx',x).attr('cy',y).attr('r',r*0.75).attr('fill','none').attr('stroke',colorB).attr('stroke-width',1.3).attr('stroke-opacity',0.85)
+      .transition().duration(280).ease(d3.easeCubicOut).attr('r',r*2.5).attr('stroke-opacity',0).remove();
+    for(let i=0;i<8;i++){
+      const ang=(i/8)*Math.PI*2+rnd(-0.25,0.25), dist=rnd(10,20);
+      const c = i%2===0 ? colorA : colorB;
+      layer.append('circle').attr('cx',x).attr('cy',y).attr('r',rnd(1,1.9)).attr('fill',c).attr('opacity',0.85)
+        .transition().duration(rnd(260,360)).ease(d3.easeCubicOut).attr('cx',x+Math.cos(ang)*dist).attr('cy',y+Math.sin(ang)*dist+2).attr('r',0).attr('opacity',0).remove();
+    }
+    setTimeout(()=>layer.remove(), 420);
+  }
+
+  function playCombust(){
+    if(pending<=0){ animating=false; return; }
+    animating = true; pending--;
+
+    const r = field.opts.dotRadius;
+    const brickTemp = field.svg.append('circle')
+      .attr('cx', -r-6).attr('cy', cy).attr('r', r*0.85)
+      .attr('fill','url(#glass-brick)').attr('stroke',GLASS_COLORS.brick).attr('stroke-width',1).attr('stroke-opacity',0.65);
+    const orangeTemp = field.svg.append('circle')
+      .attr('cx', W+r+6).attr('cy', cy).attr('r', r*0.85)
+      .attr('fill','url(#glass-blue)').attr('stroke',GLASS_COLORS.blue).attr('stroke-width',1).attr('stroke-opacity',0.65);
+
+    let arrived = 0;
+    function onArrive(){
+      arrived++;
+      if(arrived<2) return;
+      brickTemp.remove(); orangeTemp.remove();
+      burstDual(cx, cy, r, GLASS_COLORS.brick, GLASS_COLORS.blue);
+      field.spawn('combust', {startX:cx, startY:cy});
+      setTimeout(playCombust, 260);
+    }
+    brickTemp.transition().duration(400).ease(d3.easeQuadIn).attr('cx', cx).on('end', onArrive);
+    orangeTemp.transition().duration(400).ease(d3.easeQuadIn).attr('cx', cx).on('end', onArrive);
+  }
+
+  const chart = LineChart('chart-conflict', {
+    xDomain:[2022,2032],
+    yFormat: d3.format(',.0f'),
+    series:[
+      {key:'cjng0', color:'#7A2626', points:true},
+      {key:'fam0', color:'#2E4A70', points:true},
+      {key:'cjng', color:'#B33A3A', dash:true},
+      {key:'fam', color:'#3A5FB3', dash:true}
+    ]
+  });
+
+  const cjng = DATA.cartels.find(c=>c.short==='CJNG');
+  const fam = DATA.cartels.find(c=>c.name.includes('Familia Michoacana'));
+  chart.setStatic('cjng0', [{x:2022, v:cjng.size}]);
+  chart.setStatic('fam0', [{x:2022, v:fam.size}]);
+
+  const Rij=13, eps=0.05;
+  const S_cjng = (Rij+eps)/(cjng.allies+1);
+  const S_fam = (Rij+eps)/(fam.allies+1);
+
+  const THETA_BASE = 5.2e-7;
+  const thetaMult = 1; // baseline lethality (fixed, no slider for now)
+  let Ci = cjng.size, Cj = fam.size, week=0, finished=false;
+
+  const TOTAL_CASUALTIES = 13404; // real combined casualties over the run, from the paper's own Eq. 1 with real Rij/allies
+
+  function seed(){
+    field.clear(); chart.reset(['cjng0','fam0']); Ci=cjng.size; Cj=fam.size; week=0; finished=false;
+    animating=false;
+    chart.push('cjng',2022,Ci); chart.push('fam',2022,Cj);
+    chart.render();
+    // queue every real combustion event up front, same reasoning as the arrests
+    // card — the choreography plays them back-to-back at its own pace instead
+    // of spreading ~27 events thin across the full 130s window. The chart still
+    // evolves at the real pace in the background, reaching the same real totals.
+    pending = Math.round(TOTAL_CASUALTIES/CASUALTY_UNIT);
+    if(pending>0) playCombust();
+  }
+
+  document.getElementById('r3-reset').addEventListener('click', seed);
+  seed();
+
+  runLoop((dt)=>{
+    if(!finished){
+      const dtWeeks = (dt/1000)*WEEKS_PER_SEC;
+      const theta = THETA_BASE*thetaMult;
+      const lossI = theta*Ci*Cj*S_cjng*dtWeeks;
+      const lossJ = theta*Cj*Ci*S_fam*dtWeeks;
+      Ci = Math.max(0, Ci-lossI); Cj = Math.max(0, Cj-lossJ);
+      week = Math.min(TOTAL_WEEKS, week+dtWeeks);
+      chart.push('cjng', 2022 + week/52, Ci); chart.push('fam', 2022 + week/52, Cj);
+      chart.render();
+      if(week >= TOTAL_WEEKS || Cj<=0){ finished = true; }
+    }
+    field.tick(dt); field.render();
+  });
+})();
+
+/* =========================================================
+   LAB 4 — SATURATION
+   Same mechanic as the recruiting card: bubbles fall from the top
+   and stack — now at the SAME pace as recruiting (~0.4s/bubble),
+   not spread thin across the full 130s window. With only 17
+   bubbles total (vs. recruiting's 329), stretching them across
+   the same real-time window left multi-second gaps between drops;
+   this keeps the rhythm consistent and just finishes sooner.
+   "Saturation" = internal instability + dropouts + diminishing
+   returns (main text, Science 381 p.2) — one of three named
+   causes, isolated here. Total is real: Fig. 3A reports 285,000
+   people were ever cartel members 2012-2022; 60% active + 17%
+   dead + 20% incapacitated = only 97%, leaving a 3% residual
+   (~8,550 people) neither active, dead, nor incapacitated — our
+   own subtraction on the paper's real percentages, not a number
+   the paper states directly.
+   1 bubble = 500 people, ~17 bubbles total.
+   Chart: real total cartel population, Table S1, for the same
+   2012-2022 window (dropouts are ~20x smaller and don't share a
+   sensible y-axis with population, so shown only via the bubbles).
+========================================================= */
+(function saturationDemo(){
+  const UNIT = 500; // 1 bubble = 500 people (shared unit across all four cards)
+  const TOTAL_DROPOUTS = 8550; // 3% of 285,000 (100% - 60% active - 17% dead - 20% incapacitated), Fig. 3A
+  const SPAWN_INTERVAL_MS = 395; // same per-bubble pace as recruiting (~130s / 329 bubbles)
+  const field = BubbleField('stage-saturation', { width:280, height:190, dotRadius:5.0, maxDots:60, wallPad:6 });
+  const chart = LineChart('chart-saturation', {
+    xDomain:[2012,2022],
+    yFormat: d3.format(',.0f'),
+    series:[ {key:'reported', color:'#40453F', points:true} ]
+  });
+  chart.setStatic('reported', TABLE_S1.population.years.map((yr,i)=>({x:yr, v:TABLE_S1.population.values[i]})));
+
+  const totalBubbles = Math.round(TOTAL_DROPOUTS/UNIT);
+  let spawned = 0, timer = null;
+
+  function pour(){
+    if(spawned >= totalBubbles) return;
+    field.spawn('slate');
+    spawned++;
+    timer = setTimeout(pour, SPAWN_INTERVAL_MS);
+  }
+
+  function seed(){
+    field.clear(); spawned = 0;
+    if(timer) clearTimeout(timer);
+    pour();
+  }
+
+  document.getElementById('r4-reset').addEventListener('click', seed);
+  seed();
+
+  runLoop((dt)=>{ field.tick(dt); field.render(); });
+})();
+
+})();
+
+</script>
+</body>
+</html>
